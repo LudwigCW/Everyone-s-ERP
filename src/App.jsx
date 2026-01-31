@@ -23,8 +23,6 @@ import html2canvas from 'html2canvas';
 
 // --- CONFIG ---
 const getFirebaseConfig = () => {
-  // 1. Versuch: Lade aus Umgebungsvariablen (Render/Vite .env)
-  // Das ist der "saubere" Weg für GitHub, falls Variablen gesetzt sind.
   try {
     // @ts-ignore
     if (import.meta.env && import.meta.env.VITE_FIREBASE_API_KEY) {
@@ -34,22 +32,20 @@ const getFirebaseConfig = () => {
         projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
         storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
         messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-        appId: import.meta.env.VITE_FIREBASE_APP_ID
+        appId: import.meta.env.VITE_FIREBASE_APP_ID,
+        measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
       };
     }
-  } catch (e) {
-    // Falls import.meta nicht existiert, ignorieren wir den Fehler und nehmen den Fallback.
-  }
+  } catch (e) {}
 
-  // 2. Fallback: Hardcodierte echte Schlüssel
-  // Dies stellt sicher, dass die App IMMER läuft, auch wenn keine Env-Vars gesetzt sind.
   return {
     apiKey: "AIzaSyCWls6t8VWGmWulkN48vWElXTtFNjfIsSk",
     authDomain: "everyone-s-erp.firebaseapp.com",
     projectId: "everyone-s-erp",
     storageBucket: "everyone-s-erp.firebasestorage.app",
     messagingSenderId: "60049333234",
-    appId: "1:60049333234:web:7548720abd2d38adc1296b"
+    appId: "1:60049333234:web:7548720abd2d38adc1296b",
+    measurementId: "G-6JZ4PNKZYG"
   };
 };
 
@@ -78,17 +74,15 @@ export default function App() {
   const [items, setItems] = useState([]);
   
   // Transaction States
-  const [invoices, setInvoices] = useState([]); // Ausgang
-  const [expenses, setExpenses] = useState([]); // Eingang (Neu)
+  const [invoices, setInvoices] = useState([]);
+  const [expenses, setExpenses] = useState([]);
   
   // UI States
   const [selectedInvoices, setSelectedInvoices] = useState([]);
-  const [viewInvoice, setViewInvoice] = useState(null); // Für Modal-Ansicht
+  const [viewInvoice, setViewInvoice] = useState(null); 
 
-  // Local Editor State (Ausgang)
+  // Local Editor State
   const [currentInvoice, setCurrentInvoice] = useState(getEmptyInvoice());
-  
-  // Local Editor State (Eingang / Ausgaben)
   const [currentExpense, setCurrentExpense] = useState(getEmptyExpense());
 
   function getEmptyInvoice() {
@@ -106,7 +100,7 @@ export default function App() {
 
   function getEmptyExpense() {
     return {
-      number: '', // Externe Belegnummer
+      number: '', 
       date: new Date().toISOString().split('T')[0],
       vendorId: '',
       description: '',
@@ -179,7 +173,7 @@ export default function App() {
       syncCollection('suppliers', setSuppliers),
       syncCollection('items', setItems),
       syncCollection('invoices', setInvoices),
-      syncCollection('expenses', setExpenses), // Neu
+      syncCollection('expenses', setExpenses),
       syncProfile()
     ];
     return () => unsubs.forEach(unsub => unsub());
@@ -502,9 +496,12 @@ export default function App() {
 
   // --- COMPONENT: Invoice Preview Render (For Modal & Editor) ---
   const InvoicePaper = ({ data, idPrefix }) => {
-      // Helper to avoid prop drilling, using closure data or prop data
-      const sender = getSenderData(data);
-      const customer = data.customerSnap;
+      // FIX: Ensure data exists and has totals. If not, provide fallbacks to prevent crash.
+      const safeData = data || {};
+      const safeTotals = safeData.totals || { netto: 0, taxGroups: {}, brutto: 0 };
+      const safeItems = safeData.items || [];
+      const sender = getSenderData(safeData);
+      const customer = safeData.customerSnap;
       
       return (
         <div id={idPrefix} className="bg-white shadow-2xl rounded-sm p-12 text-[11px] leading-tight min-h-[900px] border relative mx-auto" style={{ width: '210mm', minHeight: '297mm' }}>
@@ -514,7 +511,7 @@ export default function App() {
                 </div>
                 <div className="text-right">
                     <h2 className="text-2xl font-black text-slate-800 tracking-tighter">RECHNUNG</h2>
-                    <p className="text-slate-500 font-bold mb-4">{data.number}</p>
+                    <p className="text-slate-500 font-bold mb-4">{safeData.number}</p>
                     <div className="text-[9px] text-slate-500">
                         {sender.phone && <p>Tel: {sender.phone}</p>}
                         {sender.email && <p>Email: {sender.email}</p>}
@@ -529,13 +526,13 @@ export default function App() {
                 ) : <p className="text-slate-300 italic">Bitte Kunde wählen...</p>}
             </div>
             <div className="flex justify-between mb-8 border-b pb-4">
-                <div><p className="font-bold text-[10px] text-slate-500 uppercase">Leistungsdatum</p><p>{new Date(data.serviceDate).toLocaleDateString('de-DE')}</p></div>
-                <div className="text-right"><p className="font-bold text-[10px] text-slate-500 uppercase">Rechnungsdatum</p><p>{new Date(data.date).toLocaleDateString('de-DE')}</p></div>
+                <div><p className="font-bold text-[10px] text-slate-500 uppercase">Leistungsdatum</p><p>{safeData.serviceDate ? new Date(safeData.serviceDate).toLocaleDateString('de-DE') : '-'}</p></div>
+                <div className="text-right"><p className="font-bold text-[10px] text-slate-500 uppercase">Rechnungsdatum</p><p>{safeData.date ? new Date(safeData.date).toLocaleDateString('de-DE') : '-'}</p></div>
             </div>
             <table className="w-full mb-8">
                 <thead className="border-b-2 border-slate-900"><tr className="text-left font-bold"><th className="py-2">Pos</th><th className="py-2">Beschreibung</th><th className="py-2 text-right">Anz.</th><th className="py-2 text-right">Einzel</th><th className="py-2 text-right">Gesamt</th></tr></thead>
                 <tbody className="divide-y divide-slate-100">
-                    {data.items.map((line, idx) => (
+                    {safeItems.map((line, idx) => (
                         <tr key={line.id || idx}>
                             <td className="py-3 text-slate-400">{idx+1}</td>
                             <td className="py-3 font-semibold">{line.description || 'Leistung'}</td>
@@ -548,11 +545,11 @@ export default function App() {
             </table>
             <div className="flex justify-end mb-12">
                 <div className="w-56 space-y-1">
-                    <div className="flex justify-between"><span>Summe Netto:</span><span>{data.totals.netto.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}</span></div>
-                    {Object.entries(data.totals.taxGroups).map(([rate, val]) => (
+                    <div className="flex justify-between"><span>Summe Netto:</span><span>{safeTotals.netto.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}</span></div>
+                    {Object.entries(safeTotals.taxGroups || {}).map(([rate, val]) => (
                         <div key={rate} className="flex justify-between text-slate-500 italic"><span>MwSt {rate}%:</span><span>{val.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}</span></div>
                     ))}
-                    <div className="flex justify-between font-black text-sm border-t-2 border-slate-900 pt-2 mt-2"><span>GESAMTBETRAG:</span><span>{data.totals.brutto.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}</span></div>
+                    <div className="flex justify-between font-black text-sm border-t-2 border-slate-900 pt-2 mt-2"><span>GESAMTBETRAG:</span><span>{safeTotals.brutto.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}</span></div>
                 </div>
             </div>
             <div className="absolute bottom-8 left-12 right-12 border-t pt-4 grid grid-cols-3 gap-4 text-[8px] text-slate-500">
@@ -734,8 +731,15 @@ export default function App() {
                 <button onClick={() => generatePDF('invoice-preview', `Rechnung_${currentInvoice.number}.pdf`)} className="bg-red-600 text-white px-6 py-4 rounded-xl font-bold shadow-lg flex items-center justify-center gap-2 hover:bg-red-700 transition"><Printer className="w-5 h-5"/> Drucken</button>
               </div>
             </div>
-            {/* PREVIEW COMPONENT */}
-            <InvoicePaper data={currentInvoice} idPrefix="invoice-preview" />
+            {/* PREVIEW COMPONENT - FIX: Passing live calculated totals and customer */}
+            <InvoicePaper 
+                data={{
+                    ...currentInvoice, 
+                    totals: totals,
+                    customerSnap: customers.find(c => c.id === currentInvoice.customerId)
+                }} 
+                idPrefix="invoice-preview" 
+            />
           </div>
         )}
 
