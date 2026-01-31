@@ -17,7 +17,7 @@ import {
   Settings, Package, Globe, ChevronRight, LayoutDashboard, Download, CheckCircle, Landmark, Upload, Truck, Briefcase, LogOut, Mail, Lock, Shield, FileDown, Ban, CheckSquare, Square, Printer, Eye, ArrowUpRight, ArrowDownLeft, X
 } from 'lucide-react';
 
-// ECHTE IMPORTE (Funktionieren in Produktion/Render)
+// --- WICHTIG: BITTE LOKAL DIE FOLGENDEN ZWEI ZEILEN AKTIVIEREN (// LÖSCHEN) ---
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 
@@ -114,8 +114,13 @@ export default function App() {
   // --- Auth Logic ---
   useEffect(() => {
     const initAuth = async () => {
+      // Fehler abfangen, falls Token nicht passt (nur relevant für Preview)
       if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-        await signInWithCustomToken(auth, __initial_auth_token);
+        try {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } catch (e) {
+          // Silent catch
+        }
       }
     };
     initAuth();
@@ -130,7 +135,7 @@ export default function App() {
       setAuthError('');
     } catch (error) {
       console.error(error);
-      setAuthError('Google Login fehlgeschlagen. Prüfen Sie die "Authorized Domains" in Firebase.');
+      setAuthError('Google Login fehlgeschlagen.');
     }
   };
 
@@ -181,6 +186,8 @@ export default function App() {
 
   // --- PDF Generation ---
   const generatePDF = async (elementId, fileName) => {
+    // --- WICHTIG: BITTE LOKAL DIE KOMMENTARZEICHEN (/* und */) ENTFERNEN ---
+    
     const input = document.getElementById(elementId);
     if (!input) { alert("Vorschau nicht gefunden."); return; }
     
@@ -201,6 +208,12 @@ export default function App() {
         alert("Fehler beim Erstellen des PDFs.");
     } finally {
         input.style.boxShadow = originalShadow;
+    }
+    
+    
+    // Fallback falls Code nicht aktiviert wurde (für Vorschau):
+    if (typeof jsPDF === 'undefined') {
+       window.print();
     }
   };
 
@@ -596,13 +609,13 @@ export default function App() {
             <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 mt-4 px-3">Übersicht</p>
             <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center gap-3 p-3 rounded-lg transition ${activeTab === 'dashboard' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800'}`}><LayoutDashboard className="w-5 h-5"/> Dashboard</button>
             
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 mt-6 px-3">Verkauf (Ausgang)</p>
-            <button onClick={() => setActiveTab('invoice-editor')} className={`w-full flex items-center gap-3 p-3 rounded-lg transition ${activeTab === 'invoice-editor' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800'}`}><ArrowUpRight className="w-5 h-5 text-green-400"/> Neue Ausgangsrechnung</button>
-            <button onClick={() => setActiveTab('invoice-history')} className={`w-full flex items-center gap-3 p-3 rounded-lg transition ${activeTab === 'invoice-history' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800'}`}><History className="w-5 h-5"/> Ausgangsrechnungen</button>
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 mt-6 px-3">Verkauf</p>
+            <button onClick={() => setActiveTab('invoice-editor')} className={`w-full flex items-center gap-3 p-3 rounded-lg transition ${activeTab === 'invoice-editor' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800'}`}><ArrowUpRight className="w-5 h-5 text-green-400"/> Neue Rechnung</button>
+            <button onClick={() => setActiveTab('invoice-history')} className={`w-full flex items-center gap-3 p-3 rounded-lg transition ${activeTab === 'invoice-history' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800'}`}><History className="w-5 h-5"/> Rechnungsarchiv</button>
             
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 mt-6 px-3">Einkauf (Eingang)</p>
-            <button onClick={() => setActiveTab('expense-editor')} className={`w-full flex items-center gap-3 p-3 rounded-lg transition ${activeTab === 'expense-editor' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800'}`}><ArrowDownLeft className="w-5 h-5 text-orange-400"/> Neue Eingangsrechnung</button>
-            <button onClick={() => setActiveTab('expense-history')} className={`w-full flex items-center gap-3 p-3 rounded-lg transition ${activeTab === 'expense-history' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800'}`}><History className="w-5 h-5"/> Eingangsrechnungen</button>
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 mt-6 px-3">Einkauf</p>
+            <button onClick={() => setActiveTab('expense-editor')} className={`w-full flex items-center gap-3 p-3 rounded-lg transition ${activeTab === 'expense-editor' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800'}`}><ArrowDownLeft className="w-5 h-5 text-orange-400"/> Neue Einkäufe</button>
+            <button onClick={() => setActiveTab('expense-history')} className={`w-full flex items-center gap-3 p-3 rounded-lg transition ${activeTab === 'expense-history' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800'}`}><History className="w-5 h-5"/> Einkaufsarchiv</button>
 
             <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 mt-6 px-3">Stammdaten</p>
             <button onClick={() => setActiveTab('customers')} className={`w-full flex items-center gap-3 p-3 rounded-lg transition ${activeTab === 'customers' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800'}`}><User className="w-5 h-5"/> Kunden</button>
@@ -728,7 +741,7 @@ export default function App() {
               <div className="bg-white p-6 rounded-xl shadow-sm border space-y-2"><label className="text-xs font-bold text-slate-400">Fußtext / Anmerkungen</label><textarea className="w-full p-2 border rounded" rows="3" value={currentInvoice.notes} onChange={e => setCurrentInvoice({...currentInvoice, notes: e.target.value})}/></div>
               <div className="flex gap-4">
                 <button onClick={saveInvoice} disabled={loading} className="flex-1 bg-blue-600 text-white py-4 rounded-xl font-bold shadow-lg flex items-center justify-center gap-2 hover:bg-blue-700 transition"><Save className="w-5 h-5"/> {loading ? 'Wird gebucht...' : 'Buchen & Archivieren'}</button>
-                <button onClick={() => generatePDF('invoice-preview', `Rechnung_${currentInvoice.number}.pdf`)} className="bg-red-600 text-white px-6 py-4 rounded-xl font-bold shadow-lg flex items-center justify-center gap-2 hover:bg-red-700 transition"><Printer className="w-5 h-5"/> Drucken</button>
+                <button onClick={() => generatePDF('invoice-preview', `Rechnung_${currentInvoice.number}.pdf`)} className="bg-red-600 text-white px-6 py-4 rounded-xl font-bold shadow-lg flex items-center justify-center gap-2 hover:bg-red-700 transition"><Printer className="w-5 h-5"/> Drucken / PDF</button>
               </div>
             </div>
             {/* PREVIEW COMPONENT - FIX: Passing live calculated totals and customer */}
@@ -747,7 +760,7 @@ export default function App() {
         {activeTab === 'invoice-history' && (
           <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
              <div className="p-6 border-b bg-slate-50 flex justify-between items-center">
-                <div><h2 className="text-xl font-bold">Ausgangsrechnungen</h2><div className="text-xs text-slate-500">Ihre gestellten Rechnungen</div></div>
+                <div><h2 className="text-xl font-bold">Rechnungsarchiv</h2><div className="text-xs text-slate-500">Ihre gestellten Rechnungen</div></div>
                 {selectedInvoices.length > 0 && (
                     <div className="flex gap-2 items-center bg-blue-50 p-2 rounded-lg border border-blue-100 animate-in fade-in">
                         <span className="text-sm font-bold text-blue-800 px-2">{selectedInvoices.length} ausgewählt</span>
@@ -787,7 +800,7 @@ export default function App() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pb-20">
              <div className="space-y-6">
                 <div className="bg-white p-6 rounded-xl shadow-sm border space-y-4">
-                   <h2 className="text-lg font-bold border-b pb-2 flex items-center gap-2 text-orange-600"><ArrowDownLeft className="w-5 h-5"/> Neue Eingangsrechnung erfassen</h2>
+                   <h2 className="text-lg font-bold border-b pb-2 flex items-center gap-2 text-orange-600"><ArrowDownLeft className="w-5 h-5"/> Neue Einkäufe erfassen</h2>
                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div><label className="text-xs font-bold text-slate-400">Lieferant *</label><select className="w-full p-2 border rounded bg-white" value={currentExpense.vendorId} onChange={e => setCurrentExpense({...currentExpense, vendorId: e.target.value})}><option value="">-- Wählen --</option>{vendors.map(v => <option key={v.id} value={v.id}>{getDisplayName(v)}</option>)}</select></div>
                       <div><label className="text-xs font-bold text-slate-400">Externe Beleg-Nr.</label><input className="w-full p-2 border rounded" placeholder="RE-12345" value={currentExpense.number} onChange={e => setCurrentExpense({...currentExpense, number: e.target.value})}/></div>
@@ -820,7 +833,7 @@ export default function App() {
         {activeTab === 'expense-history' && (
           <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
              <div className="p-6 border-b bg-slate-50 flex justify-between items-center">
-                <div><h2 className="text-xl font-bold">Eingangsrechnungen</h2><div className="text-xs text-slate-500">Archiv Ihrer Ausgaben</div></div>
+                <div><h2 className="text-xl font-bold">Einkaufsarchiv</h2><div className="text-xs text-slate-500">Archiv Ihrer Ausgaben</div></div>
              </div>
              <table className="w-full text-left">
                 <thead className="bg-slate-50 text-slate-400 text-[10px] uppercase font-bold">
