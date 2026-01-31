@@ -14,25 +14,33 @@ import {
 import { getFirestore, collection, doc, setDoc, onSnapshot, addDoc, deleteDoc, updateDoc, writeBatch } from 'firebase/firestore';
 import { 
   Plus, Trash2, Save, FileText, History, User, Building, Euro, 
-  Settings, Package, Globe, ChevronRight, LayoutDashboard, Download, CheckCircle, Landmark, Upload, Truck, Briefcase, LogOut, Mail, Lock, Shield
+  Settings, Package, Globe, ChevronRight, LayoutDashboard, Download, CheckCircle, Landmark, Upload, Truck, Briefcase, LogOut, Mail, Lock, Shield, FileDown, Ban, CheckSquare, Square, Printer
 } from 'lucide-react';
 
-// --- ECHTE CONFIG (Hier deine Daten aus der Firebase Konsole einfügen!) ---
-// Ersetze die Werte unten mit denen aus deinem Firebase-Projekt (Phase 1).
+// ECHTE IMPORTE (Funktionieren in Produktion/Render)
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
+
+// --- CONFIG ---
+// Vite lädt diese Variablen automatisch aus den Render Environment Variables
 const firebaseConfig = {
-  apiKey: "AIzaSyCWls6t8VWGmWulkN48vWElXTtFNjfIsSk",
-  authDomain: "everyone-s-erp.firebaseapp.com",
-  projectId: "everyone-s-erp",
-  storageBucket: "everyone-s-erp.firebasestorage.app",
-  messagingSenderId: "60049333234",
-  appId: "1:60049333234:web:7548720abd2d38adc1296b",
-  measurementId: "G-6JZ4PNKZYG"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
+
+// Sicherheits-Check, damit man Fehler schnell sieht
+if (!firebaseConfig.apiKey) {
+  console.warn("Firebase Config fehlt! Stellen Sie sicher, dass die Environment Variables in Render gesetzt sind.");
+}
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'erp-prod-v1';
+const appId = 'erp-prod-v1'; // Feste App-ID für Produktion
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -40,7 +48,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   
   // Auth State
-  const [authMode, setAuthMode] = useState('login'); // 'login' or 'register'
+  const [authMode, setAuthMode] = useState('login'); 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState('');
@@ -53,6 +61,9 @@ export default function App() {
   const [items, setItems] = useState([]);
   const [invoices, setInvoices] = useState([]);
   
+  // Selection State for Archive
+  const [selectedInvoices, setSelectedInvoices] = useState([]);
+
   // Local Editor State
   const [currentInvoice, setCurrentInvoice] = useState(getEmptyInvoice());
 
@@ -71,14 +82,6 @@ export default function App() {
 
   // --- Auth Logic ---
   useEffect(() => {
-    // In der lokalen Entwicklung warten wir auf den User-Login.
-    // Falls ein Token vorhanden ist (nur im Canvas/Preview Modus relevant):
-    const initAuth = async () => {
-      if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-        await signInWithCustomToken(auth, __initial_auth_token);
-      }
-    };
-    initAuth();
     const unsubscribe = onAuthStateChanged(auth, setUser);
     return () => unsubscribe();
   }, []);
@@ -90,7 +93,7 @@ export default function App() {
       setAuthError('');
     } catch (error) {
       console.error(error);
-      setAuthError('Google Login fehlgeschlagen. (Hinweis: Prüfe "Authorized domains" in Firebase).');
+      setAuthError('Google Login fehlgeschlagen. Prüfen Sie die "Authorized Domains" in Firebase.');
     }
   };
 
@@ -112,30 +115,21 @@ export default function App() {
   const handleLogout = async () => {
     await signOut(auth);
     setProfile(null);
-    setCustomers([]);
-    setItems([]);
-    setInvoices([]);
+    setCustomers([]); setItems([]); setInvoices([]);
   };
 
   // --- Real-time Sync ---
   useEffect(() => {
     if (!user) return;
-
     const syncCollection = (name, setter) => {
       const q = collection(db, 'artifacts', appId, 'users', user.uid, name);
       return onSnapshot(q, (s) => setter(s.docs.map(d => ({ id: d.id, ...d.data() }))));
     };
-
     const syncProfile = () => {
        return onSnapshot(doc(db, 'artifacts', appId, 'users', user.uid, 'settings', 'profile'), (doc) => {
-         if (doc.exists()) {
-           setProfile({ id: doc.id, ...doc.data() });
-         } else {
-           setProfile(null);
-         }
+         if (doc.exists()) setProfile({ id: doc.id, ...doc.data() }); else setProfile(null);
        });
     };
-
     const unsubs = [
       syncCollection('customers', setCustomers),
       syncCollection('vendors', setVendors),
@@ -144,11 +138,70 @@ export default function App() {
       syncCollection('invoices', setInvoices),
       syncProfile()
     ];
-
     return () => unsubs.forEach(unsub => unsub());
   }, [user]);
 
-  // --- CSV Import Helper ---
+  // --- PDF Generation Helper (Production Ready) ---
+  const generatePDF = async (elementId, fileName) => {
+    const input = document.getElementById(elementId);
+    if (!input) {
+        alert("Fehler: Vorschau nicht gefunden.");
+        return;
+    }
+    
+    // Styling für sauberen Druck anpassen (Schatten entfernen)
+    const originalShadow = input.style.boxShadow;
+    input.style.boxShadow = 'none';
+    
+    try {
+        const canvas = await html2canvas(input, { scale: 2, useCORS: true });
+        const imgData = canvas.toDataURL('image/png');
+        const pdf = new jsPDF('p', 'mm', 'a4');
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+        
+        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+        pdf.save(fileName);
+    } catch (err) {
+        console.error("PDF Error:", err);
+        alert("Fehler beim Erstellen des PDFs.");
+    } finally {
+        input.style.boxShadow = originalShadow;
+    }
+  };
+
+  // --- CSV Helpers ---
+  const downloadCSVTemplate = (fields, filename) => {
+    const headers = fields.map(f => f.label).join(';');
+    const blob = new Blob([`\uFEFF${headers}\n`], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `${filename}_vorlage.csv`;
+    link.click();
+  };
+
+  const downloadInvoicesCSV = () => {
+    if (selectedInvoices.length === 0) return;
+    const dataToExport = invoices.filter(inv => selectedInvoices.includes(inv.id));
+    const headers = ['Rechnungsnummer', 'Datum', 'Kunde', 'Netto', 'Steuer', 'Brutto', 'Status'];
+    const rows = dataToExport.map(inv => [
+        inv.number,
+        inv.date,
+        getDisplayName(inv.customerSnap),
+        inv.totals.netto.toLocaleString('de-DE').replace('.', ''),
+        inv.totals.taxTotal.toLocaleString('de-DE').replace('.', ''),
+        inv.totals.brutto.toLocaleString('de-DE').replace('.', ''),
+        'Gebucht'
+    ].join(';')); 
+
+    const csvContent = `\uFEFF${headers.join(';')}\n${rows.join('\n')}`;
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `rechnungsexport_${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+  };
+
   const processCSVImport = async (text, fields, collectionName) => {
     if (!user) return;
     const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
@@ -160,13 +213,7 @@ export default function App() {
     
     const fieldMap = {};
     headers.forEach((header, index) => {
-      const foundField = fields.find(f => 
-        f.label.toLowerCase() === header || 
-        f.key.toLowerCase() === header ||
-        (f.label === 'Firmenname' && header.includes('firma')) ||
-        (f.label === 'Nr.' && header.includes('nummer')) ||
-        (f.label === 'PLZ' && header.includes('postleitzahl'))
-      );
+      const foundField = fields.find(f => f.label.toLowerCase() === header || f.key.toLowerCase() === header);
       if (foundField) fieldMap[index] = foundField.key;
     });
 
@@ -187,15 +234,11 @@ export default function App() {
         count++;
       }
     }
-    if (count > 0) {
-      await batch.commit();
-      alert(`${count} Datensätze erfolgreich importiert!`);
-    } else {
-      alert("Keine passenden Datensätze gefunden.");
-    }
+    if (count > 0) { await batch.commit(); alert(`${count} Datensätze erfolgreich importiert!`); } 
+    else { alert("Keine passenden Datensätze gefunden."); }
   };
 
-  // --- CRUD Actions & Helpers ---
+  // --- Logic Helpers ---
   const handleSaveData = async (col, data) => {
     if (!user) return;
     try {
@@ -206,15 +249,51 @@ export default function App() {
 
   const handleSaveProfile = async (data) => {
     if (!user) return;
-    try {
-      await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'settings', 'profile'), data, { merge: true });
-      alert("Profil gespeichert!");
-    } catch (e) { console.error(e); }
+    try { await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'settings', 'profile'), data, { merge: true }); alert("Profil gespeichert!"); } catch (e) { console.error(e); }
   };
 
   const handleDelete = async (col, id) => {
     if (!user) return;
     await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, col, id));
+  };
+
+  // --- Storno Logic ---
+  const handleStorno = async (originalInvoice) => {
+      if(!window.confirm(`Möchten Sie die Rechnung ${originalInvoice.number} wirklich stornieren? Es wird eine Gutschrift erstellt.`)) return;
+      
+      const stornoInvoice = {
+          ...originalInvoice,
+          number: `STORNO-${originalInvoice.number}`,
+          date: new Date().toISOString().split('T')[0],
+          notes: `Storno zu Rechnung ${originalInvoice.number}.`,
+          items: originalInvoice.items.map(item => ({
+              ...item,
+              price: -Math.abs(item.price)
+          })),
+          createdAt: new Date().toISOString(),
+          relatedInvoiceId: originalInvoice.id
+      };
+
+      let netto = 0;
+      let taxGroups = {};
+      stornoInvoice.items.forEach(item => {
+        const lineNetto = item.quantity * item.price;
+        netto += lineNetto;
+        const rate = stornoInvoice.countryZone === 'DE' ? item.taxRate : 0;
+        taxGroups[rate] = (taxGroups[rate] || 0) + (lineNetto * (rate / 100));
+      });
+      const taxTotal = Object.values(taxGroups).reduce((a, b) => a + b, 0);
+      stornoInvoice.totals = { netto, taxGroups, taxTotal, brutto: netto + taxTotal };
+
+      delete stornoInvoice.id; 
+
+      try {
+          await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'invoices'), stornoInvoice);
+          alert("Stornorechnung erfolgreich erstellt!");
+      } catch(e) {
+          console.error(e);
+          alert("Fehler beim Stornieren.");
+      }
   };
 
   const getDisplayName = (r) => {
@@ -312,6 +391,9 @@ export default function App() {
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-xl font-bold flex items-center gap-2"><Icon className="w-6 h-6 text-blue-600"/> {title}</h2>
           <div className="flex gap-2">
+            <button onClick={() => downloadCSVTemplate(fields, collectionName)} className="text-slate-500 hover:text-blue-600 px-3 py-2 text-sm flex items-center gap-2 underline">
+               <FileDown className="w-4 h-4"/> Vorlage laden
+            </button>
             <input type="file" ref={fileInputRef} hidden accept=".csv" onChange={handleFileChange} />
             <button onClick={() => fileInputRef.current.click()} className="bg-white border text-slate-600 px-3 py-2 rounded-lg hover:bg-slate-50 transition shadow-sm flex items-center gap-2 text-sm font-medium">
               <Upload className="w-4 h-4"/> CSV Import
@@ -327,15 +409,8 @@ export default function App() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               {fields.map(f => (
                 <div key={f.key} className={f.fullWidth ? "md:col-span-2 lg:col-span-4" : f.halfWidth ? "md:col-span-1 lg:col-span-2" : "col-span-1"}>
-                   <label className="block text-xs font-semibold text-slate-500 mb-1">
-                     {f.label} {f.required && <span className="text-red-500">*</span>}
-                   </label>
-                   <input 
-                    placeholder={f.placeholder || f.label}
-                    className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-200 outline-none bg-white shadow-sm"
-                    value={editItem[f.key] || ''}
-                    onChange={e => setEditItem({...editItem, [f.key]: e.target.value})}
-                  />
+                   <label className="block text-xs font-semibold text-slate-500 mb-1">{f.label} {f.required && <span className="text-red-500">*</span>}</label>
+                   <input placeholder={f.placeholder || f.label} className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-200 outline-none bg-white shadow-sm" value={editItem[f.key] || ''} onChange={e => setEditItem({...editItem, [f.key]: e.target.value})}/>
                 </div>
               ))}
             </div>
@@ -377,60 +452,17 @@ export default function App() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-900 to-slate-900 flex items-center justify-center p-4">
         <div className="bg-white w-full max-w-md p-8 rounded-2xl shadow-2xl">
-          <div className="text-center mb-8">
-            <div className="bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-              <FileText className="w-8 h-8 text-blue-600" />
-            </div>
-            <h1 className="text-2xl font-bold text-slate-800">ERP FLOW Login</h1>
-            <p className="text-slate-500">Ihr professionelles Rechnungstool</p>
-          </div>
-
-          {authError && (
-            <div className="bg-red-50 text-red-600 p-3 rounded-lg mb-4 text-sm flex items-center gap-2">
-              <Shield className="w-4 h-4"/> {authError}
-            </div>
-          )}
-
+          <div className="text-center mb-8"><div className="bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4"><FileText className="w-8 h-8 text-blue-600" /></div><h1 className="text-2xl font-bold text-slate-800">ERP FLOW Login</h1><p className="text-slate-500">Ihr professionelles Rechnungstool</p></div>
+          {authError && <div className="bg-red-50 text-red-600 p-3 rounded-lg mb-4 text-sm flex items-center gap-2"><Shield className="w-4 h-4"/> {authError}</div>}
           <div className="space-y-4">
-            <button 
-              onClick={handleGoogleLogin}
-              className="w-full bg-white border border-slate-300 text-slate-700 py-2.5 rounded-lg font-medium hover:bg-slate-50 transition flex items-center justify-center gap-2"
-            >
-              <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5" alt="G" />
-              Mit Google anmelden
-            </button>
-
-            <div className="relative my-6">
-              <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200"></div></div>
-              <div className="relative flex justify-center text-sm"><span className="px-2 bg-white text-slate-500">oder mit E-Mail</span></div>
-            </div>
-
+            <button onClick={handleGoogleLogin} className="w-full bg-white border border-slate-300 text-slate-700 py-2.5 rounded-lg font-medium hover:bg-slate-50 transition flex items-center justify-center gap-2"><img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5" alt="G" /> Mit Google anmelden</button>
+            <div className="relative my-6"><div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200"></div></div><div className="relative flex justify-center text-sm"><span className="px-2 bg-white text-slate-500">oder mit E-Mail</span></div></div>
             <form onSubmit={handleEmailAuth} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">E-Mail Adresse</label>
-                <div className="relative">
-                  <Mail className="absolute left-3 top-2.5 w-5 h-5 text-slate-400" />
-                  <input type="email" required className="w-full pl-10 p-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="name@firma.de" value={email} onChange={e => setEmail(e.target.value)} />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Passwort</label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-2.5 w-5 h-5 text-slate-400" />
-                  <input type="password" required className="w-full pl-10 p-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)} />
-                </div>
-              </div>
-              <button type="submit" className="w-full bg-blue-600 text-white py-2.5 rounded-lg font-bold hover:bg-blue-700 transition shadow-lg">
-                {authMode === 'login' ? 'Einloggen' : 'Konto erstellen'}
-              </button>
+              <div><label className="block text-sm font-medium text-slate-700 mb-1">E-Mail Adresse</label><div className="relative"><Mail className="absolute left-3 top-2.5 w-5 h-5 text-slate-400" /><input type="email" required className="w-full pl-10 p-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="name@firma.de" value={email} onChange={e => setEmail(e.target.value)} /></div></div>
+              <div><label className="block text-sm font-medium text-slate-700 mb-1">Passwort</label><div className="relative"><Lock className="absolute left-3 top-2.5 w-5 h-5 text-slate-400" /><input type="password" required className="w-full pl-10 p-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)} /></div></div>
+              <button type="submit" className="w-full bg-blue-600 text-white py-2.5 rounded-lg font-bold hover:bg-blue-700 transition shadow-lg">{authMode === 'login' ? 'Einloggen' : 'Konto erstellen'}</button>
             </form>
-
-            <p className="text-center text-sm text-slate-500 mt-4">
-              {authMode === 'login' ? 'Noch kein Konto?' : 'Bereits registriert?'}
-              <button onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')} className="text-blue-600 font-bold ml-1 hover:underline">
-                {authMode === 'login' ? 'Jetzt registrieren' : 'Hier anmelden'}
-              </button>
-            </p>
+            <p className="text-center text-sm text-slate-500 mt-4">{authMode === 'login' ? 'Noch kein Konto?' : 'Bereits registriert?'} <button onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')} className="text-blue-600 font-bold ml-1 hover:underline">{authMode === 'login' ? 'Jetzt registrieren' : 'Hier anmelden'}</button></p>
           </div>
         </div>
       </div>
@@ -441,28 +473,18 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col md:flex-row font-sans text-slate-800">
       <nav className="w-full md:w-64 bg-slate-900 text-slate-300 p-6 flex flex-col gap-2 shrink-0">
-        <div className="mb-8">
-          <h1 className="text-white text-2xl font-black flex items-center gap-2"><FileText className="text-blue-500" /> ERP FLOW</h1>
-          <p className="text-[10px] uppercase tracking-widest opacity-50">Multi-User Billing System</p>
-        </div>
+        <div className="mb-8"><h1 className="text-white text-2xl font-black flex items-center gap-2"><FileText className="text-blue-500" /> ERP FLOW</h1><p className="text-[10px] uppercase tracking-widest opacity-50">Multi-User Billing System</p></div>
         {[
-          { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-          { id: 'editor', label: 'Neue Rechnung', icon: Plus },
-          { id: 'history', label: 'Rechnungsarchiv', icon: History },
-          { id: 'customers', label: 'Kunden', icon: User },
-          { id: 'vendors', label: 'Lieferanten', icon: Truck },
-          { id: 'items', label: 'Artikel', icon: Package },
-          { id: 'suppliers', label: 'Andere Absender', icon: Briefcase },
-          { id: 'settings', label: 'Einstellungen', icon: Settings },
+          { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard }, { id: 'editor', label: 'Neue Rechnung', icon: Plus }, { id: 'history', label: 'Rechnungsarchiv', icon: History },
+          { id: 'customers', label: 'Kunden', icon: User }, { id: 'vendors', label: 'Lieferanten', icon: Truck }, { id: 'items', label: 'Artikel', icon: Package },
+          { id: 'suppliers', label: 'Andere Absender', icon: Briefcase }, { id: 'settings', label: 'Einstellungen', icon: Settings },
         ].map(item => (
           <button key={item.id} onClick={() => setActiveTab(item.id)} className={`flex items-center gap-3 p-3 rounded-lg transition ${activeTab === item.id ? 'bg-blue-600 text-white shadow-lg' : 'hover:bg-slate-800'}`}>
             <item.icon className="w-5 h-5" /> {item.label}
           </button>
         ))}
         <div className="mt-auto pt-6 border-t border-slate-800">
-          <button onClick={handleLogout} className="flex items-center gap-2 text-red-400 hover:text-white transition text-sm w-full p-2 rounded hover:bg-slate-800">
-             <LogOut className="w-4 h-4" /> Abmelden
-          </button>
+          <button onClick={handleLogout} className="flex items-center gap-2 text-red-400 hover:text-white transition text-sm w-full p-2 rounded hover:bg-slate-800"><LogOut className="w-4 h-4" /> Abmelden</button>
           <div className="text-[10px] text-slate-600 mt-4 truncate">ID: {user?.uid}</div>
         </div>
       </nav>
@@ -471,35 +493,19 @@ export default function App() {
         {activeTab === 'dashboard' && (
           <div className="space-y-6 animate-in fade-in duration-500">
              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="bg-white p-6 rounded-2xl shadow-sm border-b-4 border-blue-500">
-                <p className="text-slate-500 text-sm font-medium">Umsatz Gesamt</p>
-                <h3 className="text-3xl font-bold mt-1 text-slate-800">{invoices.reduce((acc, curr) => acc + curr.totals.brutto, 0).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}</h3>
-              </div>
-              <div className="bg-white p-6 rounded-2xl shadow-sm border-b-4 border-green-500">
-                <p className="text-slate-500 text-sm font-medium">Rechnungen</p>
-                <h3 className="text-3xl font-bold mt-1 text-slate-800">{invoices.length}</h3>
-              </div>
-              <div className="bg-white p-6 rounded-2xl shadow-sm border-b-4 border-purple-500">
-                <p className="text-slate-500 text-sm font-medium">Kunden</p>
-                <h3 className="text-3xl font-bold mt-1 text-slate-800">{customers.length}</h3>
-              </div>
+              <div className="bg-white p-6 rounded-2xl shadow-sm border-b-4 border-blue-500"><p className="text-slate-500 text-sm font-medium">Umsatz Gesamt</p><h3 className="text-3xl font-bold mt-1 text-slate-800">{invoices.reduce((acc, curr) => acc + curr.totals.brutto, 0).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}</h3></div>
+              <div className="bg-white p-6 rounded-2xl shadow-sm border-b-4 border-green-500"><p className="text-slate-500 text-sm font-medium">Rechnungen</p><h3 className="text-3xl font-bold mt-1 text-slate-800">{invoices.length}</h3></div>
+              <div className="bg-white p-6 rounded-2xl shadow-sm border-b-4 border-purple-500"><p className="text-slate-500 text-sm font-medium">Kunden</p><h3 className="text-3xl font-bold mt-1 text-slate-800">{customers.length}</h3></div>
             </div>
-            {!profile && (
-               <div className="bg-yellow-50 border border-yellow-200 p-6 rounded-xl flex justify-between items-center">
-                  <div><h3 className="font-bold text-yellow-800 mb-1">Profil unvollständig</h3><p className="text-sm text-yellow-700">Bitte richten Sie Ihr Firmenprofil ein.</p></div>
-                  <button onClick={() => setActiveTab('settings')} className="bg-yellow-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-yellow-700">Einstellungen</button>
-               </div>
-            )}
+            {!profile && <div className="bg-yellow-50 border border-yellow-200 p-6 rounded-xl flex justify-between items-center"><div><h3 className="font-bold text-yellow-800 mb-1">Profil unvollständig</h3><p className="text-sm text-yellow-700">Bitte richten Sie Ihr Firmenprofil ein.</p></div><button onClick={() => setActiveTab('settings')} className="bg-yellow-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-yellow-700">Einstellungen</button></div>}
           </div>
         )}
 
-        {/* --- SETTINGS TAB --- */}
         {activeTab === 'settings' && (
           <div className="max-w-4xl mx-auto bg-white rounded-xl shadow-sm border p-8 animate-in slide-in-from-bottom-4 duration-500">
              <div className="border-b pb-4 mb-8"><h2 className="text-2xl font-bold flex items-center gap-2"><Settings className="w-6 h-6 text-blue-600"/> Mein Firmenprofil</h2><p className="text-slate-500 mt-1">Diese Daten erscheinen als Absender und im Fußbereich Ihrer Rechnungen.</p></div>
              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="md:col-span-2 space-y-4">
-                  <h3 className="font-bold text-sm uppercase tracking-wider text-slate-400 border-b pb-2">Allgemeine Daten</h3>
+                <div className="md:col-span-2 space-y-4"><h3 className="font-bold text-sm uppercase tracking-wider text-slate-400 border-b pb-2">Allgemeine Daten</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="md:col-span-2"><label className="block text-xs font-bold text-slate-500 mb-1">Firmenname <span className="text-red-500">*</span></label><input className="w-full p-2 border rounded" placeholder="Muster GmbH" value={profile?.company || ''} onChange={e => setProfile({...profile, company: e.target.value})} /></div>
                     <div><label className="block text-xs font-bold text-slate-500 mb-1">Straße <span className="text-red-500">*</span></label><input className="w-full p-2 border rounded" placeholder="Hauptstr." value={profile?.street || ''} onChange={e => setProfile({...profile, street: e.target.value})} /></div>
@@ -518,7 +524,6 @@ export default function App() {
           </div>
         )}
 
-        {/* --- MODULES --- */}
         {activeTab === 'customers' && <ModuleManager title="Kundenmanagement" data={customers} collectionName="customers" icon={User} fields={addressFields} />}
         {activeTab === 'vendors' && <ModuleManager title="Lieferantenmanagement (Externe)" data={vendors} collectionName="vendors" icon={Truck} fields={addressFields} />}
         {activeTab === 'suppliers' && <ModuleManager title="Andere Absender / Profile" data={suppliers} collectionName="suppliers" icon={Building} fields={addressFields} />}
@@ -559,11 +564,14 @@ export default function App() {
               </div>
               
               <div className="bg-white p-6 rounded-xl shadow-sm border space-y-2"><label className="text-xs font-bold text-slate-400">Fußtext / Anmerkungen</label><textarea className="w-full p-2 border rounded" rows="3" value={currentInvoice.notes} onChange={e => setCurrentInvoice({...currentInvoice, notes: e.target.value})}/></div>
-              <button onClick={saveInvoice} disabled={loading} className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold shadow-lg flex items-center justify-center gap-2 hover:bg-blue-700 transition"><Save className="w-5 h-5"/> {loading ? 'Wird gebucht...' : 'Rechnung buchen & archivieren'}</button>
+              <div className="flex gap-4">
+                <button onClick={saveInvoice} disabled={loading} className="flex-1 bg-blue-600 text-white py-4 rounded-xl font-bold shadow-lg flex items-center justify-center gap-2 hover:bg-blue-700 transition"><Save className="w-5 h-5"/> {loading ? 'Wird gebucht...' : 'Buchen & Archivieren'}</button>
+                <button onClick={() => generatePDF('invoice-preview', `Rechnung_${currentInvoice.number}.pdf`)} className="bg-red-600 text-white px-6 py-4 rounded-xl font-bold shadow-lg flex items-center justify-center gap-2 hover:bg-red-700 transition"><Printer className="w-5 h-5"/> Drucken / PDF</button>
+              </div>
             </div>
 
             {/* Live Preview */}
-            <div className="bg-white shadow-2xl rounded-sm p-12 text-[11px] leading-tight min-h-[900px] border relative">
+            <div id="invoice-preview" className="bg-white shadow-2xl rounded-sm p-12 text-[11px] leading-tight min-h-[900px] border relative">
               <div className="flex justify-between mb-12">
                 <div className="text-slate-400 uppercase text-[9px]">{(() => { const s = getSenderData(); if(!s.company && !s.firstName) return 'BITTE PROFIL EINSTELLEN'; return `${getDisplayName(s)} · ${s.street || ''} ${s.houseNumber || ''} · ${s.zip || ''} ${s.city || ''}`; })()}</div>
                 <div className="text-right">
@@ -588,8 +596,47 @@ export default function App() {
         {/* --- HISTORY TAB --- */}
         {activeTab === 'history' && (
           <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-             <div className="p-6 border-b bg-slate-50 flex justify-between items-center"><h2 className="text-xl font-bold">Rechnungsarchiv</h2><div className="text-xs text-slate-500">Gefiltert auf Ihre Benutzer-ID</div></div>
-             <table className="w-full text-left"><thead className="bg-slate-50 text-slate-400 text-[10px] uppercase font-bold"><tr><th className="p-4">Nummer</th><th className="p-4">Kunde</th><th className="p-4">Netto</th><th className="p-4">Brutto</th><th className="p-4 text-right">Aktion</th></tr></thead><tbody className="divide-y">{invoices.map(inv => (<tr key={inv.id} className="hover:bg-slate-50"><td className="p-4 font-bold">{inv.number}</td><td className="p-4"><p className="font-medium">{getDisplayName(inv.customerSnap)}</p><p className="text-[10px] text-slate-400">{inv.date}</p></td><td className="p-4 text-slate-500">{inv.totals.netto.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}</td><td className="p-4 font-bold text-blue-600">{inv.totals.brutto.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}</td><td className="p-4 text-right"><button onClick={() => handleDelete('invoices', inv.id)} className="text-red-400 hover:text-red-600"><Trash2 className="w-4 h-4"/></button></td></tr>))}</tbody></table>
+             <div className="p-6 border-b bg-slate-50 flex justify-between items-center">
+                <div><h2 className="text-xl font-bold">Rechnungsarchiv</h2><div className="text-xs text-slate-500">Gefiltert auf Ihre Benutzer-ID</div></div>
+                {/* Bulk Actions */}
+                {selectedInvoices.length > 0 && (
+                    <div className="flex gap-2 items-center bg-blue-50 p-2 rounded-lg border border-blue-100 animate-in fade-in">
+                        <span className="text-sm font-bold text-blue-800 px-2">{selectedInvoices.length} ausgewählt</span>
+                        <button onClick={downloadInvoicesCSV} className="text-blue-700 hover:bg-blue-100 px-3 py-1 rounded text-xs flex items-center gap-1"><FileText className="w-3 h-3"/> CSV Export</button>
+                    </div>
+                )}
+             </div>
+             <table className="w-full text-left">
+                <thead className="bg-slate-50 text-slate-400 text-[10px] uppercase font-bold">
+                    <tr>
+                        <th className="p-4 w-10">
+                            <button onClick={() => setSelectedInvoices(selectedInvoices.length === invoices.length ? [] : invoices.map(i => i.id))}>
+                                {selectedInvoices.length === invoices.length && invoices.length > 0 ? <CheckSquare className="w-4 h-4 text-blue-600"/> : <Square className="w-4 h-4"/>}
+                            </button>
+                        </th>
+                        <th className="p-4">Nummer</th><th className="p-4">Kunde</th><th className="p-4">Netto</th><th className="p-4">Brutto</th><th className="p-4 text-right">Aktion</th>
+                    </tr>
+                </thead>
+                <tbody className="divide-y">
+                    {invoices.map(inv => (
+                        <tr key={inv.id} className="hover:bg-slate-50">
+                            <td className="p-4">
+                                <button onClick={() => setSelectedInvoices(prev => prev.includes(inv.id) ? prev.filter(id => id !== inv.id) : [...prev, inv.id])}>
+                                    {selectedInvoices.includes(inv.id) ? <CheckSquare className="w-4 h-4 text-blue-600"/> : <Square className="w-4 h-4 text-slate-300"/>}
+                                </button>
+                            </td>
+                            <td className="p-4 font-bold">{inv.number}</td>
+                            <td className="p-4"><p className="font-medium">{getDisplayName(inv.customerSnap)}</p><p className="text-[10px] text-slate-400">{inv.date}</p></td>
+                            <td className="p-4 text-slate-500">{inv.totals.netto.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}</td>
+                            <td className={`p-4 font-bold ${inv.totals.brutto < 0 ? 'text-red-600' : 'text-blue-600'}`}>{inv.totals.brutto.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}</td>
+                            <td className="p-4 text-right flex justify-end gap-2">
+                                <button onClick={() => handleStorno(inv)} title="Stornieren / Gutschrift" className="text-orange-400 hover:text-orange-600 bg-orange-50 hover:bg-orange-100 p-2 rounded"><Ban className="w-4 h-4"/></button>
+                                <button onClick={() => handleDelete('invoices', inv.id)} className="text-red-400 hover:text-red-600 bg-red-50 hover:bg-red-100 p-2 rounded"><Trash2 className="w-4 h-4"/></button>
+                            </td>
+                        </tr>
+                    ))}
+                </tbody>
+             </table>
           </div>
         )}
       </main>
