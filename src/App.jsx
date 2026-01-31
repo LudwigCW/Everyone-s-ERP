@@ -14,34 +14,48 @@ import {
 import { getFirestore, collection, doc, setDoc, onSnapshot, addDoc, deleteDoc, updateDoc, writeBatch } from 'firebase/firestore';
 import { 
   Plus, Trash2, Save, FileText, History, User, Building, Euro, 
-  Settings, Package, Globe, ChevronRight, LayoutDashboard, Download, CheckCircle, Landmark, Upload, Truck, Briefcase, LogOut, Mail, Lock, Shield, FileDown, Ban, CheckSquare, Square, Printer
+  Settings, Package, Globe, ChevronRight, LayoutDashboard, Download, CheckCircle, Landmark, Upload, Truck, Briefcase, LogOut, Mail, Lock, Shield, FileDown, Ban, CheckSquare, Square, Printer, Eye, ArrowUpRight, ArrowDownLeft, X
 } from 'lucide-react';
 
-// ECHTE IMPORTE (Funktionieren in Produktion/Render)
+// ECHTE IMPORTE (Aktiv für Produktion)
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 
 // --- CONFIG ---
-// Vite lädt diese Variablen automatisch aus den Render Environment Variables
-const firebaseConfig = {
-  apiKey: "AIzaSyCWls6t8VWGmWulkN48vWElXTtFNjfIsSk",
-  authDomain: "everyone-s-erp.firebaseapp.com",
-  projectId: "everyone-s-erp",
-  storageBucket: "everyone-s-erp.firebasestorage.app",
-  messagingSenderId: "60049333234",
-  appId: "1:60049333234:web:7548720abd2d38adc1296b",
-  measurementId: "G-6JZ4PNKZYG"
+const getFirebaseConfig = () => {
+  // 1. Umgebungsvariablen (Render/Vite)
+  try {
+    // @ts-ignore
+    if (import.meta.env && import.meta.env.VITE_FIREBASE_API_KEY) {
+      return {
+        apiKey: "AIzaSyCWls6t8VWGmWulkN48vWElXTtFNjfIsSk",
+        authDomain: "everyone-s-erp.firebaseapp.com",
+        projectId: "everyone-s-erp",
+        storageBucket: "everyone-s-erp.firebasestorage.app",
+        messagingSenderId: "60049333234",
+        appId: "1:60049333234:web:7548720abd2d38adc1296b",
+        measurementId: "G-6JZ4PNKZYG"
+      };
+    }
+  } catch (e) {}
+
+  // 2. Fallback für Canvas (damit es hier nicht abstürzt, falls Config vorhanden)
+  if (typeof __firebase_config !== 'undefined') {
+    return JSON.parse(__firebase_config);
+  }
+
+  return {
+    apiKey: "API_KEY_FEHLT",
+    authDomain: "auth-domain-fehlt",
+    projectId: "project-id-fehlt"
+  };
 };
 
-// Sicherheits-Check, damit man Fehler schnell sieht
-if (!firebaseConfig.apiKey) {
-  console.warn("Firebase Config fehlt! Stellen Sie sicher, dass die Environment Variables in Render gesetzt sind.");
-}
-
+const firebaseConfig = getFirebaseConfig();
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const appId = 'erp-prod-v1'; // Feste App-ID für Produktion
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'erp-prod-v2';
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -60,13 +74,20 @@ export default function App() {
   const [vendors, setVendors] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [items, setItems] = useState([]);
-  const [invoices, setInvoices] = useState([]);
   
-  // Selection State for Archive
+  // Transaction States
+  const [invoices, setInvoices] = useState([]); // Ausgang
+  const [expenses, setExpenses] = useState([]); // Eingang (Neu)
+  
+  // UI States
   const [selectedInvoices, setSelectedInvoices] = useState([]);
+  const [viewInvoice, setViewInvoice] = useState(null); // Für Modal-Ansicht
 
-  // Local Editor State
+  // Local Editor State (Ausgang)
   const [currentInvoice, setCurrentInvoice] = useState(getEmptyInvoice());
+  
+  // Local Editor State (Eingang / Ausgaben)
+  const [currentExpense, setCurrentExpense] = useState(getEmptyExpense());
 
   function getEmptyInvoice() {
     return {
@@ -81,8 +102,27 @@ export default function App() {
     };
   }
 
+  function getEmptyExpense() {
+    return {
+      number: '', // Externe Belegnummer
+      date: new Date().toISOString().split('T')[0],
+      vendorId: '',
+      description: '',
+      category: 'Wareneinkauf',
+      netto: 0,
+      taxRate: 19,
+      notes: ''
+    };
+  }
+
   // --- Auth Logic ---
   useEffect(() => {
+    const initAuth = async () => {
+      if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+        await signInWithCustomToken(auth, __initial_auth_token);
+      }
+    };
+    initAuth();
     const unsubscribe = onAuthStateChanged(auth, setUser);
     return () => unsubscribe();
   }, []);
@@ -116,7 +156,7 @@ export default function App() {
   const handleLogout = async () => {
     await signOut(auth);
     setProfile(null);
-    setCustomers([]); setItems([]); setInvoices([]);
+    setCustomers([]); setItems([]); setInvoices([]); setExpenses([]);
   };
 
   // --- Real-time Sync ---
@@ -137,25 +177,22 @@ export default function App() {
       syncCollection('suppliers', setSuppliers),
       syncCollection('items', setItems),
       syncCollection('invoices', setInvoices),
+      syncCollection('expenses', setExpenses), // Neu
       syncProfile()
     ];
     return () => unsubs.forEach(unsub => unsub());
   }, [user]);
 
-  // --- PDF Generation Helper (Production Ready) ---
+  // --- PDF Generation ---
   const generatePDF = async (elementId, fileName) => {
     const input = document.getElementById(elementId);
-    if (!input) {
-        alert("Fehler: Vorschau nicht gefunden.");
-        return;
-    }
+    if (!input) { alert("Vorschau nicht gefunden."); return; }
     
-    // Styling für sauberen Druck anpassen (Schatten entfernen)
     const originalShadow = input.style.boxShadow;
     input.style.boxShadow = 'none';
     
     try {
-        const canvas = await html2canvas(input, { scale: 2, useCORS: true });
+        const canvas = await html2canvas(input, { scale: 2, useCORS: true, logging: false });
         const imgData = canvas.toDataURL('image/png');
         const pdf = new jsPDF('p', 'mm', 'a4');
         const pdfWidth = pdf.internal.pageSize.getWidth();
@@ -255,6 +292,7 @@ export default function App() {
 
   const handleDelete = async (col, id) => {
     if (!user) return;
+    if(!window.confirm("Wirklich löschen?")) return;
     await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, col, id));
   };
 
@@ -303,9 +341,10 @@ export default function App() {
     return r.company ? r.company : `${r.firstName || ''} ${r.lastName || ''}`.trim();
   };
 
-  const getSenderData = () => {
-    if (currentInvoice.supplierId === 'main_profile') return profile || {};
-    return suppliers.find(s => s.id === currentInvoice.supplierId) || {};
+  const getSenderData = (inv) => {
+    const invoiceToCheck = inv || currentInvoice;
+    if (invoiceToCheck.supplierId === 'main_profile') return profile || {};
+    return suppliers.find(s => s.id === invoiceToCheck.supplierId) || {};
   };
 
   const getFullAddress = (r) => {
@@ -320,6 +359,7 @@ export default function App() {
     return lines.filter(l => l && l.trim() !== '');
   };
 
+  // Berechnung Outgoing
   const totals = useMemo(() => {
     let netto = 0;
     let taxGroups = {};
@@ -333,6 +373,13 @@ export default function App() {
     return { netto, taxGroups, taxTotal, brutto: netto + taxTotal };
   }, [currentInvoice]);
 
+  // Berechnung Incoming (Expense)
+  const expenseTotals = useMemo(() => {
+    const netto = parseFloat(currentExpense.netto) || 0;
+    const tax = netto * (currentExpense.taxRate / 100);
+    return { netto, tax, brutto: netto + tax };
+  }, [currentExpense]);
+
   const saveInvoice = async () => {
     if (!user || !currentInvoice.customerId) { alert("Bitte Kunde auswählen!"); return; }
     setLoading(true);
@@ -340,15 +387,31 @@ export default function App() {
       ...currentInvoice,
       totals,
       customerSnap: customers.find(c => c.id === currentInvoice.customerId),
-      supplierSnap: getSenderData(),
+      supplierSnap: getSenderData(currentInvoice),
       createdAt: new Date().toISOString()
     };
     await handleSaveData('invoices', fullInvoice);
     setLoading(false);
     setCurrentInvoice(getEmptyInvoice());
-    setActiveTab('history');
+    setActiveTab('invoice-history');
   };
 
+  const saveExpense = async () => {
+    if (!user || !currentExpense.vendorId) { alert("Bitte Lieferant auswählen!"); return; }
+    setLoading(true);
+    const fullExpense = {
+        ...currentExpense,
+        totals: expenseTotals,
+        vendorSnap: vendors.find(v => v.id === currentExpense.vendorId),
+        createdAt: new Date().toISOString()
+    };
+    await handleSaveData('expenses', fullExpense);
+    setLoading(false);
+    setCurrentExpense(getEmptyExpense());
+    setActiveTab('expense-history');
+  };
+
+  // --- FIELDS DEFINITION ---
   const addressFields = [
     { key: 'number', label: 'Nr.', placeholder: '1001', halfWidth: true, required: true },
     { key: 'company', label: 'Firmenname', fullWidth: true, required: true },
@@ -374,37 +437,25 @@ export default function App() {
     { key: 'unit', label: 'Einheit', placeholder: 'Stk, Std, m', halfWidth: true, required: true },
   ];
 
-  // --- Component: ModuleManager ---
+  // --- COMPONENT: ModuleManager ---
   const ModuleManager = ({ title, data, fields, collectionName, icon: Icon }) => {
     const [editItem, setEditItem] = useState(null);
     const fileInputRef = useRef(null);
-    
     const handleFileChange = async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      const text = await file.text();
-      await processCSVImport(text, fields, collectionName);
-      e.target.value = null;
+      const file = e.target.files[0]; if (!file) return;
+      const text = await file.text(); await processCSVImport(text, fields, collectionName); e.target.value = null;
     };
-
     return (
       <div className="bg-white rounded-xl shadow-sm border p-6">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-xl font-bold flex items-center gap-2"><Icon className="w-6 h-6 text-blue-600"/> {title}</h2>
           <div className="flex gap-2">
-            <button onClick={() => downloadCSVTemplate(fields, collectionName)} className="text-slate-500 hover:text-blue-600 px-3 py-2 text-sm flex items-center gap-2 underline">
-               <FileDown className="w-4 h-4"/> Vorlage laden
-            </button>
+            <button onClick={() => downloadCSVTemplate(fields, collectionName)} className="text-slate-500 hover:text-blue-600 px-3 py-2 text-sm flex items-center gap-2 underline"><FileDown className="w-4 h-4"/> Vorlage laden</button>
             <input type="file" ref={fileInputRef} hidden accept=".csv" onChange={handleFileChange} />
-            <button onClick={() => fileInputRef.current.click()} className="bg-white border text-slate-600 px-3 py-2 rounded-lg hover:bg-slate-50 transition shadow-sm flex items-center gap-2 text-sm font-medium">
-              <Upload className="w-4 h-4"/> CSV Import
-            </button>
-            <button onClick={() => setEditItem({})} className="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition shadow-md hover:shadow-lg flex items-center gap-2 text-sm font-medium">
-              <Plus className="w-4 h-4"/> Neu
-            </button>
+            <button onClick={() => fileInputRef.current.click()} className="bg-white border text-slate-600 px-3 py-2 rounded-lg hover:bg-slate-50 transition shadow-sm flex items-center gap-2 text-sm font-medium"><Upload className="w-4 h-4"/> CSV Import</button>
+            <button onClick={() => setEditItem({})} className="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition shadow-md hover:shadow-lg flex items-center gap-2 text-sm font-medium"><Plus className="w-4 h-4"/> Neu</button>
           </div>
         </div>
-        
         {editItem && (
           <div className="mb-8 p-6 bg-slate-50 rounded-lg border shadow-inner animate-in fade-in slide-in-from-top-4 duration-300">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -421,7 +472,6 @@ export default function App() {
             </div>
           </div>
         )}
-
         <div className="grid grid-cols-1 gap-2">
           {data.map(item => (
             <div key={item.id} className="flex justify-between items-center p-4 border rounded-lg hover:bg-slate-50 group transition">
@@ -442,10 +492,78 @@ export default function App() {
               </div>
             </div>
           ))}
-          {data.length === 0 && <p className="text-center text-slate-400 py-8 italic">Keine Einträge. CSV Import oder "Neu" nutzen.</p>}
+          {data.length === 0 && <p className="text-center text-slate-400 py-8 italic">Keine Einträge.</p>}
         </div>
       </div>
     );
+  };
+
+  // --- COMPONENT: Invoice Preview Render (For Modal & Editor) ---
+  const InvoicePaper = ({ data, idPrefix }) => {
+      // Helper to avoid prop drilling, using closure data or prop data
+      const sender = getSenderData(data);
+      const customer = data.customerSnap;
+      
+      return (
+        <div id={idPrefix} className="bg-white shadow-2xl rounded-sm p-12 text-[11px] leading-tight min-h-[900px] border relative mx-auto" style={{ width: '210mm', minHeight: '297mm' }}>
+            <div className="flex justify-between mb-12">
+                <div className="text-slate-400 uppercase text-[9px]">
+                    {!sender.company && !sender.firstName ? 'BITTE PROFIL EINSTELLEN' : `${getDisplayName(sender)} · ${sender.street || ''} ${sender.houseNumber || ''} · ${sender.zip || ''} ${sender.city || ''}`}
+                </div>
+                <div className="text-right">
+                    <h2 className="text-2xl font-black text-slate-800 tracking-tighter">RECHNUNG</h2>
+                    <p className="text-slate-500 font-bold mb-4">{data.number}</p>
+                    <div className="text-[9px] text-slate-500">
+                        {sender.phone && <p>Tel: {sender.phone}</p>}
+                        {sender.email && <p>Email: {sender.email}</p>}
+                    </div>
+                </div>
+            </div>
+            <div className="mb-12 h-32">
+                {customer ? (
+                    <div className="text-sm">
+                        {getFullAddress(customer).map((line, i) => <p key={i} className={i === 0 ? "font-bold" : ""}>{line}</p>)}
+                    </div>
+                ) : <p className="text-slate-300 italic">Bitte Kunde wählen...</p>}
+            </div>
+            <div className="flex justify-between mb-8 border-b pb-4">
+                <div><p className="font-bold text-[10px] text-slate-500 uppercase">Leistungsdatum</p><p>{new Date(data.serviceDate).toLocaleDateString('de-DE')}</p></div>
+                <div className="text-right"><p className="font-bold text-[10px] text-slate-500 uppercase">Rechnungsdatum</p><p>{new Date(data.date).toLocaleDateString('de-DE')}</p></div>
+            </div>
+            <table className="w-full mb-8">
+                <thead className="border-b-2 border-slate-900"><tr className="text-left font-bold"><th className="py-2">Pos</th><th className="py-2">Beschreibung</th><th className="py-2 text-right">Anz.</th><th className="py-2 text-right">Einzel</th><th className="py-2 text-right">Gesamt</th></tr></thead>
+                <tbody className="divide-y divide-slate-100">
+                    {data.items.map((line, idx) => (
+                        <tr key={line.id || idx}>
+                            <td className="py-3 text-slate-400">{idx+1}</td>
+                            <td className="py-3 font-semibold">{line.description || 'Leistung'}</td>
+                            <td className="py-3 text-right">{line.quantity}</td>
+                            <td className="py-3 text-right">{line.price.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}</td>
+                            <td className="py-3 text-right font-bold">{(line.quantity * line.price).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}</td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+            <div className="flex justify-end mb-12">
+                <div className="w-56 space-y-1">
+                    <div className="flex justify-between"><span>Summe Netto:</span><span>{data.totals.netto.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}</span></div>
+                    {Object.entries(data.totals.taxGroups).map(([rate, val]) => (
+                        <div key={rate} className="flex justify-between text-slate-500 italic"><span>MwSt {rate}%:</span><span>{val.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}</span></div>
+                    ))}
+                    <div className="flex justify-between font-black text-sm border-t-2 border-slate-900 pt-2 mt-2"><span>GESAMTBETRAG:</span><span>{data.totals.brutto.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}</span></div>
+                </div>
+            </div>
+            <div className="absolute bottom-8 left-12 right-12 border-t pt-4 grid grid-cols-3 gap-4 text-[8px] text-slate-500">
+                <div>
+                    {!sender.company && !sender.firstName ? <span className="text-red-300">Profil fehlt</span> : (
+                        <><p className="font-bold mb-1 text-slate-800">{getDisplayName(sender)}</p><p>{sender.street} {sender.houseNumber}</p><p>{sender.addressSupplement}</p><p>{sender.zip} {sender.city}</p><p>{sender.country}</p><p className="mt-2 text-[9px]">USt-IdNr.: {sender.taxId || '-'}</p></>
+                    )}
+                </div>
+                <div><p className="font-bold mb-1 text-slate-800">Bankverbindung</p><p>{sender.bankName || '-'}</p><p>IBAN: {sender.iban || '-'}</p><p>BIC: {sender.bic || '-'}</p></div>
+                <div><p className="font-bold mb-1 text-slate-800">Registergericht</p><p>Amtsgericht {sender.registerCourt || '-'}</p><p>HR-Nr: {sender.registerNumber || '-'}</p><p className="mt-1 font-bold">Geschäftsführung:</p><p>{sender.ceoFirstName} {sender.ceoLastName}</p></div>
+            </div>
+        </div>
+      );
   };
 
   // --- RENDER: Login OR App ---
@@ -453,14 +571,13 @@ export default function App() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-900 to-slate-900 flex items-center justify-center p-4">
         <div className="bg-white w-full max-w-md p-8 rounded-2xl shadow-2xl">
-          <div className="text-center mb-8"><div className="bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4"><FileText className="w-8 h-8 text-blue-600" /></div><h1 className="text-2xl font-bold text-slate-800">ERP FLOW Login</h1><p className="text-slate-500">Ihr professionelles Rechnungstool</p></div>
+          <div className="text-center mb-8"><div className="bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4"><FileText className="w-8 h-8 text-blue-600" /></div><h1 className="text-2xl font-bold text-slate-800">ERP FLOW Login</h1></div>
           {authError && <div className="bg-red-50 text-red-600 p-3 rounded-lg mb-4 text-sm flex items-center gap-2"><Shield className="w-4 h-4"/> {authError}</div>}
           <div className="space-y-4">
             <button onClick={handleGoogleLogin} className="w-full bg-white border border-slate-300 text-slate-700 py-2.5 rounded-lg font-medium hover:bg-slate-50 transition flex items-center justify-center gap-2"><img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5" alt="G" /> Mit Google anmelden</button>
-            <div className="relative my-6"><div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200"></div></div><div className="relative flex justify-center text-sm"><span className="px-2 bg-white text-slate-500">oder mit E-Mail</span></div></div>
             <form onSubmit={handleEmailAuth} className="space-y-4">
-              <div><label className="block text-sm font-medium text-slate-700 mb-1">E-Mail Adresse</label><div className="relative"><Mail className="absolute left-3 top-2.5 w-5 h-5 text-slate-400" /><input type="email" required className="w-full pl-10 p-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="name@firma.de" value={email} onChange={e => setEmail(e.target.value)} /></div></div>
-              <div><label className="block text-sm font-medium text-slate-700 mb-1">Passwort</label><div className="relative"><Lock className="absolute left-3 top-2.5 w-5 h-5 text-slate-400" /><input type="password" required className="w-full pl-10 p-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)} /></div></div>
+              <div><label className="block text-sm font-medium text-slate-700 mb-1">E-Mail</label><div className="relative"><Mail className="absolute left-3 top-2.5 w-5 h-5 text-slate-400" /><input type="email" required className="w-full pl-10 p-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" value={email} onChange={e => setEmail(e.target.value)} /></div></div>
+              <div><label className="block text-sm font-medium text-slate-700 mb-1">Passwort</label><div className="relative"><Lock className="absolute left-3 top-2.5 w-5 h-5 text-slate-400" /><input type="password" required className="w-full pl-10 p-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" value={password} onChange={e => setPassword(e.target.value)} /></div></div>
               <button type="submit" className="w-full bg-blue-600 text-white py-2.5 rounded-lg font-bold hover:bg-blue-700 transition shadow-lg">{authMode === 'login' ? 'Einloggen' : 'Konto erstellen'}</button>
             </form>
             <p className="text-center text-sm text-slate-500 mt-4">{authMode === 'login' ? 'Noch kein Konto?' : 'Bereits registriert?'} <button onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')} className="text-blue-600 font-bold ml-1 hover:underline">{authMode === 'login' ? 'Jetzt registrieren' : 'Hier anmelden'}</button></p>
@@ -473,35 +590,80 @@ export default function App() {
   // --- RENDER: Main App ---
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col md:flex-row font-sans text-slate-800">
-      <nav className="w-full md:w-64 bg-slate-900 text-slate-300 p-6 flex flex-col gap-2 shrink-0">
-        <div className="mb-8"><h1 className="text-white text-2xl font-black flex items-center gap-2"><FileText className="text-blue-500" /> ERP FLOW</h1><p className="text-[10px] uppercase tracking-widest opacity-50">Multi-User Billing System</p></div>
-        {[
-          { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard }, { id: 'editor', label: 'Neue Rechnung', icon: Plus }, { id: 'history', label: 'Rechnungsarchiv', icon: History },
-          { id: 'customers', label: 'Kunden', icon: User }, { id: 'vendors', label: 'Lieferanten', icon: Truck }, { id: 'items', label: 'Artikel', icon: Package },
-          { id: 'suppliers', label: 'Andere Absender', icon: Briefcase }, { id: 'settings', label: 'Einstellungen', icon: Settings },
-        ].map(item => (
-          <button key={item.id} onClick={() => setActiveTab(item.id)} className={`flex items-center gap-3 p-3 rounded-lg transition ${activeTab === item.id ? 'bg-blue-600 text-white shadow-lg' : 'hover:bg-slate-800'}`}>
-            <item.icon className="w-5 h-5" /> {item.label}
-          </button>
-        ))}
+      <nav className="w-full md:w-64 bg-slate-900 text-slate-300 p-6 flex flex-col gap-2 shrink-0 overflow-y-auto">
+        <div className="mb-8"><h1 className="text-white text-2xl font-black flex items-center gap-2"><FileText className="text-blue-500" /> ERP FLOW</h1><p className="text-[10px] uppercase tracking-widest opacity-50">Multi-User Billing</p></div>
+        
+        <div className="space-y-1">
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 mt-4 px-3">Übersicht</p>
+            <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center gap-3 p-3 rounded-lg transition ${activeTab === 'dashboard' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800'}`}><LayoutDashboard className="w-5 h-5"/> Dashboard</button>
+            
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 mt-6 px-3">Verkauf (Ausgang)</p>
+            <button onClick={() => setActiveTab('invoice-editor')} className={`w-full flex items-center gap-3 p-3 rounded-lg transition ${activeTab === 'invoice-editor' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800'}`}><ArrowUpRight className="w-5 h-5 text-green-400"/> Neue Ausgangsrechnung</button>
+            <button onClick={() => setActiveTab('invoice-history')} className={`w-full flex items-center gap-3 p-3 rounded-lg transition ${activeTab === 'invoice-history' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800'}`}><History className="w-5 h-5"/> Ausgangsrechnungen</button>
+            
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 mt-6 px-3">Einkauf (Eingang)</p>
+            <button onClick={() => setActiveTab('expense-editor')} className={`w-full flex items-center gap-3 p-3 rounded-lg transition ${activeTab === 'expense-editor' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800'}`}><ArrowDownLeft className="w-5 h-5 text-orange-400"/> Neue Eingangsrechnung</button>
+            <button onClick={() => setActiveTab('expense-history')} className={`w-full flex items-center gap-3 p-3 rounded-lg transition ${activeTab === 'expense-history' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800'}`}><History className="w-5 h-5"/> Eingangsrechnungen</button>
+
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 mt-6 px-3">Stammdaten</p>
+            <button onClick={() => setActiveTab('customers')} className={`w-full flex items-center gap-3 p-3 rounded-lg transition ${activeTab === 'customers' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800'}`}><User className="w-5 h-5"/> Kunden</button>
+            <button onClick={() => setActiveTab('vendors')} className={`w-full flex items-center gap-3 p-3 rounded-lg transition ${activeTab === 'vendors' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800'}`}><Truck className="w-5 h-5"/> Lieferanten</button>
+            <button onClick={() => setActiveTab('items')} className={`w-full flex items-center gap-3 p-3 rounded-lg transition ${activeTab === 'items' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800'}`}><Package className="w-5 h-5"/> Artikel</button>
+            <button onClick={() => setActiveTab('suppliers')} className={`w-full flex items-center gap-3 p-3 rounded-lg transition ${activeTab === 'suppliers' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800'}`}><Briefcase className="w-5 h-5"/> Eigene Profile</button>
+            <button onClick={() => setActiveTab('settings')} className={`w-full flex items-center gap-3 p-3 rounded-lg transition ${activeTab === 'settings' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800'}`}><Settings className="w-5 h-5"/> Einstellungen</button>
+        </div>
+        
         <div className="mt-auto pt-6 border-t border-slate-800">
           <button onClick={handleLogout} className="flex items-center gap-2 text-red-400 hover:text-white transition text-sm w-full p-2 rounded hover:bg-slate-800"><LogOut className="w-4 h-4" /> Abmelden</button>
-          <div className="text-[10px] text-slate-600 mt-4 truncate">ID: {user?.uid}</div>
         </div>
       </nav>
 
-      <main className="flex-1 p-4 md:p-10 overflow-y-auto h-screen scroll-smooth">
+      <main className="flex-1 p-4 md:p-10 overflow-y-auto h-screen scroll-smooth relative">
+        {/* VIEW MODAL OVERLAY */}
+        {viewInvoice && (
+            <div className="fixed inset-0 bg-slate-900/80 z-50 flex items-center justify-center p-4 overflow-y-auto backdrop-blur-sm">
+                <div className="relative bg-slate-100 rounded-xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-y-auto flex flex-col">
+                    <div className="sticky top-0 bg-white border-b p-4 flex justify-between items-center z-10">
+                        <h3 className="font-bold text-lg">Rechnungsvorschau: {viewInvoice.number}</h3>
+                        <div className="flex gap-2">
+                            <button onClick={() => generatePDF('modal-preview-content', `Rechnung_${viewInvoice.number}.pdf`)} className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm flex items-center gap-2 hover:bg-red-700"><FileDown className="w-4 h-4"/> Als PDF laden</button>
+                            <button onClick={() => setViewInvoice(null)} className="bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm hover:bg-slate-300"><X className="w-4 h-4"/></button>
+                        </div>
+                    </div>
+                    <div className="p-8 bg-slate-500 overflow-auto flex justify-center">
+                        <InvoicePaper data={viewInvoice} idPrefix="modal-preview-content" />
+                    </div>
+                </div>
+            </div>
+        )}
+
         {activeTab === 'dashboard' && (
           <div className="space-y-6 animate-in fade-in duration-500">
-             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="bg-white p-6 rounded-2xl shadow-sm border-b-4 border-blue-500"><p className="text-slate-500 text-sm font-medium">Umsatz Gesamt</p><h3 className="text-3xl font-bold mt-1 text-slate-800">{invoices.reduce((acc, curr) => acc + curr.totals.brutto, 0).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}</h3></div>
-              <div className="bg-white p-6 rounded-2xl shadow-sm border-b-4 border-green-500"><p className="text-slate-500 text-sm font-medium">Rechnungen</p><h3 className="text-3xl font-bold mt-1 text-slate-800">{invoices.length}</h3></div>
-              <div className="bg-white p-6 rounded-2xl shadow-sm border-b-4 border-purple-500"><p className="text-slate-500 text-sm font-medium">Kunden</p><h3 className="text-3xl font-bold mt-1 text-slate-800">{customers.length}</h3></div>
+             <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+              <div className="bg-white p-6 rounded-2xl shadow-sm border-b-4 border-green-500">
+                  <p className="text-slate-500 text-sm font-medium">Einnahmen (Netto)</p>
+                  <h3 className="text-3xl font-bold mt-1 text-slate-800">{invoices.reduce((acc, curr) => acc + curr.totals.netto, 0).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}</h3>
+              </div>
+              <div className="bg-white p-6 rounded-2xl shadow-sm border-b-4 border-red-500">
+                  <p className="text-slate-500 text-sm font-medium">Ausgaben (Netto)</p>
+                  <h3 className="text-3xl font-bold mt-1 text-slate-800">{expenses.reduce((acc, curr) => acc + curr.totals.netto, 0).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}</h3>
+              </div>
+              <div className="bg-white p-6 rounded-2xl shadow-sm border-b-4 border-blue-500">
+                  <p className="text-slate-500 text-sm font-medium">Gewinn (Netto)</p>
+                  <h3 className="text-3xl font-bold mt-1 text-blue-600">
+                      {(invoices.reduce((a,c) => a + c.totals.netto, 0) - expenses.reduce((a,c) => a + c.totals.netto, 0)).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}
+                  </h3>
+              </div>
+              <div className="bg-white p-6 rounded-2xl shadow-sm border-b-4 border-purple-500">
+                  <p className="text-slate-500 text-sm font-medium">Offene Posten</p>
+                  <h3 className="text-3xl font-bold mt-1 text-slate-800">{invoices.length}</h3>
+              </div>
             </div>
             {!profile && <div className="bg-yellow-50 border border-yellow-200 p-6 rounded-xl flex justify-between items-center"><div><h3 className="font-bold text-yellow-800 mb-1">Profil unvollständig</h3><p className="text-sm text-yellow-700">Bitte richten Sie Ihr Firmenprofil ein.</p></div><button onClick={() => setActiveTab('settings')} className="bg-yellow-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-yellow-700">Einstellungen</button></div>}
           </div>
         )}
 
+        {/* SETTINGS, CUSTOMERS, VENDORS, ITEMS, SUPPLIERS -> Same as before (condensed) */}
         {activeTab === 'settings' && (
           <div className="max-w-4xl mx-auto bg-white rounded-xl shadow-sm border p-8 animate-in slide-in-from-bottom-4 duration-500">
              <div className="border-b pb-4 mb-8"><h2 className="text-2xl font-bold flex items-center gap-2"><Settings className="w-6 h-6 text-blue-600"/> Mein Firmenprofil</h2><p className="text-slate-500 mt-1">Diese Daten erscheinen als Absender und im Fußbereich Ihrer Rechnungen.</p></div>
@@ -530,8 +692,8 @@ export default function App() {
         {activeTab === 'suppliers' && <ModuleManager title="Andere Absender / Profile" data={suppliers} collectionName="suppliers" icon={Building} fields={addressFields} />}
         {activeTab === 'items' && <ModuleManager title="Artikelkatalog" data={items} collectionName="items" icon={Package} fields={itemFields} />}
 
-        {/* --- INVOICE EDITOR --- */}
-        {activeTab === 'editor' && (
+        {/* --- INVOICE EDITOR (OUTGOING) --- */}
+        {activeTab === 'invoice-editor' && (
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 pb-20">
             <div className="space-y-6">
               <div className="bg-white p-6 rounded-xl shadow-sm border space-y-4">
@@ -567,39 +729,19 @@ export default function App() {
               <div className="bg-white p-6 rounded-xl shadow-sm border space-y-2"><label className="text-xs font-bold text-slate-400">Fußtext / Anmerkungen</label><textarea className="w-full p-2 border rounded" rows="3" value={currentInvoice.notes} onChange={e => setCurrentInvoice({...currentInvoice, notes: e.target.value})}/></div>
               <div className="flex gap-4">
                 <button onClick={saveInvoice} disabled={loading} className="flex-1 bg-blue-600 text-white py-4 rounded-xl font-bold shadow-lg flex items-center justify-center gap-2 hover:bg-blue-700 transition"><Save className="w-5 h-5"/> {loading ? 'Wird gebucht...' : 'Buchen & Archivieren'}</button>
-                <button onClick={() => generatePDF('invoice-preview', `Rechnung_${currentInvoice.number}.pdf`)} className="bg-red-600 text-white px-6 py-4 rounded-xl font-bold shadow-lg flex items-center justify-center gap-2 hover:bg-red-700 transition"><Printer className="w-5 h-5"/> Drucken / PDF</button>
+                <button onClick={() => generatePDF('invoice-preview', `Rechnung_${currentInvoice.number}.pdf`)} className="bg-red-600 text-white px-6 py-4 rounded-xl font-bold shadow-lg flex items-center justify-center gap-2 hover:bg-red-700 transition"><Printer className="w-5 h-5"/> Drucken</button>
               </div>
             </div>
-
-            {/* Live Preview */}
-            <div id="invoice-preview" className="bg-white shadow-2xl rounded-sm p-12 text-[11px] leading-tight min-h-[900px] border relative">
-              <div className="flex justify-between mb-12">
-                <div className="text-slate-400 uppercase text-[9px]">{(() => { const s = getSenderData(); if(!s.company && !s.firstName) return 'BITTE PROFIL EINSTELLEN'; return `${getDisplayName(s)} · ${s.street || ''} ${s.houseNumber || ''} · ${s.zip || ''} ${s.city || ''}`; })()}</div>
-                <div className="text-right">
-                  <h2 className="text-2xl font-black text-slate-800 tracking-tighter">RECHNUNG</h2>
-                  <p className="text-slate-500 font-bold mb-4">{currentInvoice.number}</p>
-                  <div className="text-[9px] text-slate-500">{(() => { const s = getSenderData(); return (<>{s.phone && <p>Tel: {s.phone}</p>}{s.email && <p>Email: {s.email}</p>}</>) })()}</div>
-                </div>
-              </div>
-              <div className="mb-12 h-32">{(() => { const c = customers.find(c => c.id === currentInvoice.customerId); if(!c) return <p className="text-slate-300 italic">Bitte Kunde wählen...</p>; return (<div className="text-sm">{getFullAddress(c).map((line, i) => (<p key={i} className={i === 0 ? "font-bold" : ""}>{line}</p>))}</div>); })()}</div>
-              <div className="flex justify-between mb-8 border-b pb-4"><div><p className="font-bold text-[10px] text-slate-500 uppercase">Leistungsdatum</p><p>{new Date(currentInvoice.serviceDate).toLocaleDateString('de-DE')}</p></div><div className="text-right"><p className="font-bold text-[10px] text-slate-500 uppercase">Rechnungsdatum</p><p>{new Date(currentInvoice.date).toLocaleDateString('de-DE')}</p></div></div>
-              <table className="w-full mb-8"><thead className="border-b-2 border-slate-900"><tr className="text-left font-bold"><th className="py-2">Pos</th><th className="py-2">Beschreibung</th><th className="py-2 text-right">Anz.</th><th className="py-2 text-right">Einzel</th><th className="py-2 text-right">Gesamt</th></tr></thead><tbody className="divide-y divide-slate-100">{currentInvoice.items.map((line, idx) => (<tr key={line.id}><td className="py-3 text-slate-400">{idx+1}</td><td className="py-3 font-semibold">{line.description || 'Leistung'}</td><td className="py-3 text-right">{line.quantity}</td><td className="py-3 text-right">{line.price.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}</td><td className="py-3 text-right font-bold">{(line.quantity * line.price).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}</td></tr>))}</tbody></table>
-              <div className="flex justify-end mb-12"><div className="w-56 space-y-1"><div className="flex justify-between"><span>Summe Netto:</span><span>{totals.netto.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}</span></div>{Object.entries(totals.taxGroups).map(([rate, val]) => (<div key={rate} className="flex justify-between text-slate-500 italic"><span>MwSt {rate}%:</span><span>{val.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}</span></div>))}<div className="flex justify-between font-black text-sm border-t-2 border-slate-900 pt-2 mt-2"><span>GESAMTBETRAG:</span><span>{totals.brutto.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}</span></div></div></div>
-              <div className="absolute bottom-8 left-12 right-12 border-t pt-4 grid grid-cols-3 gap-4 text-[8px] text-slate-500">
-                <div>{(() => { const s = getSenderData(); if(!s.company && !s.firstName) return <span className="text-red-300">Profil fehlt</span>; return (<><p className="font-bold mb-1 text-slate-800">{getDisplayName(s)}</p><p>{s.street} {s.houseNumber}</p><p>{s.addressSupplement}</p><p>{s.zip} {s.city}</p><p>{s.country}</p><p className="mt-2 text-[9px]">USt-IdNr.: {s.taxId || '-'}</p></>) })()}</div>
-                <div><p className="font-bold mb-1 text-slate-800">Bankverbindung</p>{(() => { const s = getSenderData(); return (<><p>{s.bankName || '-'}</p><p>IBAN: {s.iban || '-'}</p><p>BIC: {s.bic || '-'}</p></>) })()}</div>
-                <div><p className="font-bold mb-1 text-slate-800">Registergericht</p>{(() => { const s = getSenderData(); return (<><p>Amtsgericht {s.registerCourt || '-'}</p><p>HR-Nr: {s.registerNumber || '-'}</p><p className="mt-1 font-bold">Geschäftsführung:</p><p>{s.ceoFirstName} {s.ceoLastName}</p></>) })()}</div>
-              </div>
-            </div>
+            {/* PREVIEW COMPONENT */}
+            <InvoicePaper data={currentInvoice} idPrefix="invoice-preview" />
           </div>
         )}
 
-        {/* --- HISTORY TAB --- */}
-        {activeTab === 'history' && (
+        {/* --- INVOICE HISTORY (OUTGOING) --- */}
+        {activeTab === 'invoice-history' && (
           <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
              <div className="p-6 border-b bg-slate-50 flex justify-between items-center">
-                <div><h2 className="text-xl font-bold">Rechnungsarchiv</h2><div className="text-xs text-slate-500">Gefiltert auf Ihre Benutzer-ID</div></div>
-                {/* Bulk Actions */}
+                <div><h2 className="text-xl font-bold">Ausgangsrechnungen</h2><div className="text-xs text-slate-500">Ihre gestellten Rechnungen</div></div>
                 {selectedInvoices.length > 0 && (
                     <div className="flex gap-2 items-center bg-blue-50 p-2 rounded-lg border border-blue-100 animate-in fade-in">
                         <span className="text-sm font-bold text-blue-800 px-2">{selectedInvoices.length} ausgewählt</span>
@@ -610,29 +752,22 @@ export default function App() {
              <table className="w-full text-left">
                 <thead className="bg-slate-50 text-slate-400 text-[10px] uppercase font-bold">
                     <tr>
-                        <th className="p-4 w-10">
-                            <button onClick={() => setSelectedInvoices(selectedInvoices.length === invoices.length ? [] : invoices.map(i => i.id))}>
-                                {selectedInvoices.length === invoices.length && invoices.length > 0 ? <CheckSquare className="w-4 h-4 text-blue-600"/> : <Square className="w-4 h-4"/>}
-                            </button>
-                        </th>
-                        <th className="p-4">Nummer</th><th className="p-4">Kunde</th><th className="p-4">Netto</th><th className="p-4">Brutto</th><th className="p-4 text-right">Aktion</th>
+                        <th className="p-4 w-10"><button onClick={() => setSelectedInvoices(selectedInvoices.length === invoices.length ? [] : invoices.map(i => i.id))}>{selectedInvoices.length === invoices.length && invoices.length > 0 ? <CheckSquare className="w-4 h-4 text-blue-600"/> : <Square className="w-4 h-4"/>}</button></th>
+                        <th className="p-4">Nr.</th><th className="p-4">Kunde</th><th className="p-4">Netto</th><th className="p-4">Brutto</th><th className="p-4 text-right">Aktion</th>
                     </tr>
                 </thead>
                 <tbody className="divide-y">
-                    {invoices.map(inv => (
+                    {invoices.sort((a,b) => new Date(b.date) - new Date(a.date)).map(inv => (
                         <tr key={inv.id} className="hover:bg-slate-50">
-                            <td className="p-4">
-                                <button onClick={() => setSelectedInvoices(prev => prev.includes(inv.id) ? prev.filter(id => id !== inv.id) : [...prev, inv.id])}>
-                                    {selectedInvoices.includes(inv.id) ? <CheckSquare className="w-4 h-4 text-blue-600"/> : <Square className="w-4 h-4 text-slate-300"/>}
-                                </button>
-                            </td>
+                            <td className="p-4"><button onClick={() => setSelectedInvoices(prev => prev.includes(inv.id) ? prev.filter(id => id !== inv.id) : [...prev, inv.id])}>{selectedInvoices.includes(inv.id) ? <CheckSquare className="w-4 h-4 text-blue-600"/> : <Square className="w-4 h-4 text-slate-300"/>}</button></td>
                             <td className="p-4 font-bold">{inv.number}</td>
                             <td className="p-4"><p className="font-medium">{getDisplayName(inv.customerSnap)}</p><p className="text-[10px] text-slate-400">{inv.date}</p></td>
                             <td className="p-4 text-slate-500">{inv.totals.netto.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}</td>
                             <td className={`p-4 font-bold ${inv.totals.brutto < 0 ? 'text-red-600' : 'text-blue-600'}`}>{inv.totals.brutto.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}</td>
                             <td className="p-4 text-right flex justify-end gap-2">
-                                <button onClick={() => handleStorno(inv)} title="Stornieren / Gutschrift" className="text-orange-400 hover:text-orange-600 bg-orange-50 hover:bg-orange-100 p-2 rounded"><Ban className="w-4 h-4"/></button>
-                                <button onClick={() => handleDelete('invoices', inv.id)} className="text-red-400 hover:text-red-600 bg-red-50 hover:bg-red-100 p-2 rounded"><Trash2 className="w-4 h-4"/></button>
+                                <button onClick={() => setViewInvoice(inv)} title="Rechnung anzeigen" className="text-blue-500 hover:bg-blue-50 p-2 rounded"><Eye className="w-4 h-4"/></button>
+                                <button onClick={() => handleStorno(inv)} title="Stornieren / Gutschrift" className="text-orange-400 hover:bg-orange-50 p-2 rounded"><Ban className="w-4 h-4"/></button>
+                                <button onClick={() => handleDelete('invoices', inv.id)} className="text-red-400 hover:bg-red-50 p-2 rounded"><Trash2 className="w-4 h-4"/></button>
                             </td>
                         </tr>
                     ))}
@@ -640,6 +775,69 @@ export default function App() {
              </table>
           </div>
         )}
+
+        {/* --- EXPENSE EDITOR (INCOMING) --- */}
+        {activeTab === 'expense-editor' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pb-20">
+             <div className="space-y-6">
+                <div className="bg-white p-6 rounded-xl shadow-sm border space-y-4">
+                   <h2 className="text-lg font-bold border-b pb-2 flex items-center gap-2 text-orange-600"><ArrowDownLeft className="w-5 h-5"/> Neue Eingangsrechnung erfassen</h2>
+                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div><label className="text-xs font-bold text-slate-400">Lieferant *</label><select className="w-full p-2 border rounded bg-white" value={currentExpense.vendorId} onChange={e => setCurrentExpense({...currentExpense, vendorId: e.target.value})}><option value="">-- Wählen --</option>{vendors.map(v => <option key={v.id} value={v.id}>{getDisplayName(v)}</option>)}</select></div>
+                      <div><label className="text-xs font-bold text-slate-400">Externe Beleg-Nr.</label><input className="w-full p-2 border rounded" placeholder="RE-12345" value={currentExpense.number} onChange={e => setCurrentExpense({...currentExpense, number: e.target.value})}/></div>
+                      <div><label className="text-xs font-bold text-slate-400">Belegdatum</label><input type="date" className="w-full p-2 border rounded" value={currentExpense.date} onChange={e => setCurrentExpense({...currentExpense, date: e.target.value})}/></div>
+                      <div><label className="text-xs font-bold text-slate-400">Kategorie</label><select className="w-full p-2 border rounded bg-white" value={currentExpense.category} onChange={e => setCurrentExpense({...currentExpense, category: e.target.value})}><option>Wareneinkauf</option><option>Büromaterial</option><option>Miete</option><option>Werbung</option><option>KFZ</option><option>Sonstiges</option></select></div>
+                   </div>
+                   <div><label className="text-xs font-bold text-slate-400">Beschreibung</label><input className="w-full p-2 border rounded" placeholder="Wofür war diese Ausgabe?" value={currentExpense.description} onChange={e => setCurrentExpense({...currentExpense, description: e.target.value})}/></div>
+                   <div className="grid grid-cols-3 gap-4 bg-orange-50 p-4 rounded-lg border border-orange-100">
+                      <div><label className="text-xs font-bold text-slate-500">Netto Betrag (€)</label><input type="number" className="w-full p-2 border rounded" value={currentExpense.netto} onChange={e => setCurrentExpense({...currentExpense, netto: parseFloat(e.target.value) || 0})}/></div>
+                      <div><label className="text-xs font-bold text-slate-500">MwSt Satz (%)</label><select className="w-full p-2 border rounded" value={currentExpense.taxRate} onChange={e => setCurrentExpense({...currentExpense, taxRate: parseFloat(e.target.value)})}> <option value="19">19%</option><option value="7">7%</option><option value="0">0%</option></select></div>
+                      <div><label className="text-xs font-bold text-slate-500">Brutto (Auto)</label><div className="w-full p-2 font-bold text-slate-700">{(expenseTotals.brutto).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}</div></div>
+                   </div>
+                   <button onClick={saveExpense} disabled={loading} className="w-full bg-orange-600 text-white py-3 rounded-lg font-bold shadow-md hover:bg-orange-700 transition flex items-center justify-center gap-2"><Save className="w-5 h-5"/> Ausgabe buchen</button>
+                </div>
+             </div>
+             {/* Expense Preview List - just recent ones */}
+             <div className="bg-white rounded-xl shadow-sm border p-6">
+                <h3 className="font-bold text-slate-500 mb-4">Letzte Ausgaben</h3>
+                {expenses.slice(0, 5).map(ex => (
+                   <div key={ex.id} className="flex justify-between items-center py-3 border-b last:border-0">
+                      <div><p className="font-bold text-sm">{ex.vendorSnap?.company || 'Unbekannt'}</p><p className="text-xs text-slate-400">{ex.description}</p></div>
+                      <div className="text-right"><p className="font-bold text-red-600">-{ex.totals.brutto.toLocaleString('de-DE', {style:'currency', currency:'EUR'})}</p><p className="text-xs text-slate-400">{ex.date}</p></div>
+                   </div>
+                ))}
+             </div>
+          </div>
+        )}
+
+        {/* --- EXPENSE HISTORY (INCOMING) --- */}
+        {activeTab === 'expense-history' && (
+          <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+             <div className="p-6 border-b bg-slate-50 flex justify-between items-center">
+                <div><h2 className="text-xl font-bold">Eingangsrechnungen</h2><div className="text-xs text-slate-500">Archiv Ihrer Ausgaben</div></div>
+             </div>
+             <table className="w-full text-left">
+                <thead className="bg-slate-50 text-slate-400 text-[10px] uppercase font-bold">
+                    <tr><th className="p-4">Datum</th><th className="p-4">Lieferant</th><th className="p-4">Beschreibung</th><th className="p-4">Netto</th><th className="p-4">Brutto</th><th className="p-4 text-right">Aktion</th></tr>
+                </thead>
+                <tbody className="divide-y">
+                    {expenses.sort((a,b) => new Date(b.date) - new Date(a.date)).map(ex => (
+                        <tr key={ex.id} className="hover:bg-slate-50">
+                            <td className="p-4 text-slate-500 text-sm">{ex.date}</td>
+                            <td className="p-4 font-bold">{getDisplayName(ex.vendorSnap)}<div className="text-[10px] text-slate-400 font-normal">{ex.number}</div></td>
+                            <td className="p-4 text-sm">{ex.description}<div className="text-[10px] bg-slate-100 inline-block px-1 rounded text-slate-500">{ex.category}</div></td>
+                            <td className="p-4 text-slate-500">{ex.totals.netto.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}</td>
+                            <td className="p-4 font-bold text-red-600">-{ex.totals.brutto.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}</td>
+                            <td className="p-4 text-right">
+                                <button onClick={() => handleDelete('expenses', ex.id)} className="text-red-400 hover:bg-red-50 p-2 rounded"><Trash2 className="w-4 h-4"/></button>
+                            </td>
+                        </tr>
+                    ))}
+                </tbody>
+             </table>
+          </div>
+        )}
+
       </main>
     </div>
   );
