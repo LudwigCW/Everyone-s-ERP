@@ -17,37 +17,39 @@ import {
   Settings, Package, Globe, ChevronRight, LayoutDashboard, Download, CheckCircle, Landmark, Upload, Truck, Briefcase, LogOut, Mail, Lock, Shield, FileDown, Ban, CheckSquare, Square, Printer, Eye, ArrowUpRight, ArrowDownLeft, X
 } from 'lucide-react';
 
-// ECHTE IMPORTE (Aktiv für Produktion)
+// ECHTE IMPORTE (Funktionieren in Produktion/Render)
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 
 // --- CONFIG ---
 const getFirebaseConfig = () => {
-  // 1. Umgebungsvariablen (Render/Vite)
+  // 1. Versuch: Lade aus Umgebungsvariablen (Render/Vite .env)
+  // Das ist der "saubere" Weg für GitHub, falls Variablen gesetzt sind.
   try {
     // @ts-ignore
     if (import.meta.env && import.meta.env.VITE_FIREBASE_API_KEY) {
       return {
-        apiKey: "AIzaSyCWls6t8VWGmWulkN48vWElXTtFNjfIsSk",
-        authDomain: "everyone-s-erp.firebaseapp.com",
-        projectId: "everyone-s-erp",
-        storageBucket: "everyone-s-erp.firebasestorage.app",
-        messagingSenderId: "60049333234",
-        appId: "1:60049333234:web:7548720abd2d38adc1296b",
-        measurementId: "G-6JZ4PNKZYG"
+        apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+        authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+        projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+        storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+        messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+        appId: import.meta.env.VITE_FIREBASE_APP_ID
       };
     }
-  } catch (e) {}
-
-  // 2. Fallback für Canvas (damit es hier nicht abstürzt, falls Config vorhanden)
-  if (typeof __firebase_config !== 'undefined') {
-    return JSON.parse(__firebase_config);
+  } catch (e) {
+    // Falls import.meta nicht existiert, ignorieren wir den Fehler und nehmen den Fallback.
   }
 
+  // 2. Fallback: Hardcodierte echte Schlüssel
+  // Dies stellt sicher, dass die App IMMER läuft, auch wenn keine Env-Vars gesetzt sind.
   return {
-    apiKey: "API_KEY_FEHLT",
-    authDomain: "auth-domain-fehlt",
-    projectId: "project-id-fehlt"
+    apiKey: "AIzaSyCWls6t8VWGmWulkN48vWElXTtFNjfIsSk",
+    authDomain: "everyone-s-erp.firebaseapp.com",
+    projectId: "everyone-s-erp",
+    storageBucket: "everyone-s-erp.firebasestorage.app",
+    messagingSenderId: "60049333234",
+    appId: "1:60049333234:web:7548720abd2d38adc1296b"
   };
 };
 
