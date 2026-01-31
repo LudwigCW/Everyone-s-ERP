@@ -24,12 +24,13 @@ import html2canvas from 'html2canvas';
 // --- CONFIG ---
 // Vite lädt diese Variablen automatisch aus den Render Environment Variables
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID
+  apiKey: "AIzaSyCWls6t8VWGmWulkN48vWElXTtFNjfIsSk",
+  authDomain: "everyone-s-erp.firebaseapp.com",
+  projectId: "everyone-s-erp",
+  storageBucket: "everyone-s-erp.firebasestorage.app",
+  messagingSenderId: "60049333234",
+  appId: "1:60049333234:web:7548720abd2d38adc1296b",
+  measurementId: "G-6JZ4PNKZYG"
 };
 
 // Sicherheits-Check, damit man Fehler schnell sieht
