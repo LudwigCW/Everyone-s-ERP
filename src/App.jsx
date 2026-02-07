@@ -1057,7 +1057,7 @@ function ErpSystem() {
 
   // --- FIELDS DEFINITION ---
   const addressFields = [
-    { key: 'number', label: 'Nr.', placeholder: '1001', halfWidth: true, required: true },
+    { key: 'number', label: 'Nr.', placeholder: '10001', halfWidth: true, required: true },
     { key: 'isCollective', label: 'Ist Sammelkunde (Laufkundschaft)?', type: 'checkbox' },
     { key: 'company', label: 'Firmenname', fullWidth: true, required: true },
     { key: 'salutation', label: 'Anrede', placeholder: 'Herr/Frau' },
@@ -1071,7 +1071,7 @@ function ErpSystem() {
     { key: 'country', label: 'Land', placeholder: 'Deutschland', required: true },
     { key: 'email', label: 'E-Mail', halfWidth: true },
     { key: 'phone', label: 'Telefon', halfWidth: true },
-    { key: 'taxId', label: 'USt-IdNr.', fullWidth: true, required: true },
+    { key: 'taxId', label: 'USt-IdNr.', fullWidth: true, required: false },
     { key: 'bankName', label: 'Bankname' },
     { key: 'iban', label: 'IBAN' },
     { key: 'bic', label: 'BIC' }
