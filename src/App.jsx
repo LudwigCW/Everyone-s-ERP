@@ -1,6 +1,6 @@
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import SuperAdminDashboard from './SuperAdminDashboard';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Menu } from 'lucide-react';
 import { AuthProvider, useAuth } from './AuthContext';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
@@ -81,7 +81,11 @@ const storage = getStorage(app);
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'erp-prod-v2';
 
 function ErpSystem() {
-  // 1. HIER 'switchCompany' HINZUFÜGEN (im Screenshot fehlt das noch)
+  
+  // --- STATE FÜR MOBILE MENU ---
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+    // 1. HIER 'switchCompany' HINZUFÜGEN (im Screenshot fehlt das noch)
   const { user, userProfile, activeCompanyId, switchCompany, loading: authLoading } = useAuth();
 
   // ... deine States (activeTab, loading etc.) können hier bleiben ...
@@ -118,6 +122,38 @@ function ErpSystem() {
   const [filterDateStart, setFilterDateStart] = useState(''); // Startdatum
   const [filterDateEnd, setFilterDateEnd] = useState('');     // Enddatum
   const [searchTerm, setSearchTerm] = useState('');
+
+  // --- THEME KONFIGURATION ---
+  const themes = {
+    light: {
+      name: 'Modern Light',
+      sidebar: 'bg-white border-r border-slate-200 text-slate-600',
+      activeBtn: 'bg-blue-600 text-white shadow-lg shadow-blue-200',
+      hoverBtn: 'hover:bg-slate-50 text-slate-600',
+      mainBg: 'bg-slate-50',
+      iconColor: 'text-blue-500'
+    },
+    dark: {
+      name: 'Classic Dark',
+      sidebar: 'bg-slate-900 border-r border-slate-800 text-slate-400',
+      activeBtn: 'bg-blue-600 text-white shadow-lg shadow-blue-900/50',
+      hoverBtn: 'hover:bg-slate-800 text-slate-300',
+      mainBg: 'bg-slate-950', // Auch der Hintergrund rechts wird dunkel!
+      iconColor: 'text-blue-400'
+    },
+    berry: {
+      name: 'Berry & Rose',
+      sidebar: 'bg-fuchsia-50 border-r border-fuchsia-200 text-fuchsia-800',
+      activeBtn: 'bg-fuchsia-600 text-white shadow-lg shadow-fuchsia-200',
+      hoverBtn: 'hover:bg-fuchsia-100 text-fuchsia-900',
+      mainBg: 'bg-white',
+      iconColor: 'text-fuchsia-500'
+    }
+  };
+
+  // Aktuelles Theme laden (Fallback auf 'light')
+  const currentThemeKey = profile?.theme || 'light';
+  const theme = themes[currentThemeKey] || themes.light;
 
   // --- ZUSTAND FÜR VORSCHAU-SKALIERUNG ---
   const [previewScale, setPreviewScale] = useState(1);
@@ -1519,54 +1555,129 @@ function ErpSystem() {
     return <SuperAdminDashboard db={db} />;
   }
 
+  
   // --- RENDER: Main App ---
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col md:flex-row font-sans text-slate-800">
-      {/* Das ist deine Seitenleiste (Sidebar) */}
-      <nav className="w-full md:w-64 bg-slate-900 text-slate-300 p-6 flex flex-col gap-2 shrink-0 overflow-y-auto">
+    <div className={`min-h-screen flex flex-col md:flex-row font-sans text-slate-800 transition-colors duration-300 ${theme.mainBg}`}>
+      
+      {/* 1. MOBILE HEADER (Nur sichtbar auf kleinen Bildschirmen < md) */}
+      <div className={`md:hidden flex items-center justify-between p-4 border-b transition-colors duration-300 ${theme.sidebar}`}>
+          {/* Logo links */}
+          <div className="flex items-center gap-2">
+             <img src="/logo.png" alt="Logo" className="h-8 object-contain" />
+             <span className="font-bold text-sm tracking-widest uppercase opacity-70">BillingFlow</span>
+          </div>
+          
+          {/* Hamburger Button rechts */}
+          <button 
+            onClick={() => setMobileMenuOpen(true)}
+            className={`p-2 rounded-lg transition ${currentThemeKey === 'dark' ? 'bg-slate-800 text-white' : 'bg-white border text-slate-600'}`}
+          >
+            <Menu className="w-6 h-6" />
+          </button>
+      </div>
+
+      {/* 2. SIDEBAR NAVIGATION (Desktop: Immer da / Mobile: Nur wenn open) */}
+      {/* Wir nutzen 'fixed' für Mobile (schwebt drüber) und 'md:relative' für Desktop */}
+      <nav className={`
+          fixed inset-y-0 left-0 z-50 w-64 transform transition-transform duration-300 ease-in-out
+          md:relative md:translate-x-0 shrink-0 flex flex-col gap-2 p-6 overflow-y-auto h-screen border-r
+          ${theme.sidebar}
+          ${mobileMenuOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}
+      `}>
         
-        {/* --- NEU: HIER EINFÜGEN START --- */}
-        {/* Dieser Block prüft: Bist du Super Admin? Dann zeig den Zurück-Button */}
+        {/* CLOSE BUTTON (Nur Mobile sichtbar) */}
+        <div className="md:hidden flex justify-end mb-4">
+            <button onClick={() => setMobileMenuOpen(false)} className="p-2 bg-slate-100 rounded-full text-slate-500">
+                <X className="w-5 h-5" />
+            </button>
+        </div>
+
+        {/* ZURÜCK BUTTON (Nur Admin) */}
         {userProfile?.role === 'super_admin' && (
            <button 
              onClick={() => switchCompany(null)} 
-             className="mb-6 bg-blue-900 text-blue-200 p-3 rounded-lg text-xs font-bold uppercase tracking-wider flex items-center gap-2 hover:bg-blue-800 transition"
+             className="mb-6 bg-slate-800 text-white p-3 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 hover:bg-slate-700 transition shadow-md"
            >
              <ArrowLeft className="w-4 h-4"/> Zurück zur Kanzlei
            </button>
         )}
-        {/* --- NEU: HIER EINFÜGEN ENDE --- */}
 
-        {/* Hier drunter ist dein bestehendes Logo / Titel (das hast du schon) */}
-        
-        <div className="mb-8"><h1 className="text-white text-2xl font-black flex items-center gap-2"><FileText className="text-blue-500" /> ERP FLOW</h1><p className="text-[10px] uppercase tracking-widest opacity-50">Multi-User Billing</p></div>
-        
-        <div className="space-y-1">
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 mt-4 px-3">Übersicht</p>
-            <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center gap-3 p-3 rounded-lg transition ${activeTab === 'dashboard' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800'}`}><LayoutDashboard className="w-5 h-5"/> Dashboard</button>
-            
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 mt-6 px-3">Verkauf</p>
-            <button onClick={() => setActiveTab('invoice-editor')} className={`w-full flex items-center gap-3 p-3 rounded-lg transition ${activeTab === 'invoice-editor' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800'}`}><ArrowUpRight className="w-5 h-5 text-green-400"/> Neue Rechnung</button>
-            <button onClick={() => setActiveTab('invoice-history')} className={`w-full flex items-center gap-3 p-3 rounded-lg transition ${activeTab === 'invoice-history' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800'}`}><History className="w-5 h-5"/> Rechnungsarchiv</button>
-            
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 mt-6 px-3">Einkauf</p>
-            <button onClick={() => setActiveTab('expense-editor')} className={`w-full flex items-center gap-3 p-3 rounded-lg transition ${activeTab === 'expense-editor' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800'}`}><ArrowDownLeft className="w-5 h-5 text-orange-400"/> Neue Einkäufe</button>
-            <button onClick={() => setActiveTab('expense-history')} className={`w-full flex items-center gap-3 p-3 rounded-lg transition ${activeTab === 'expense-history' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800'}`}><History className="w-5 h-5"/> Einkaufsarchiv</button>
-
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 mt-6 px-3">Stammdaten</p>
-            <button onClick={() => setActiveTab('customers')} className={`w-full flex items-center gap-3 p-3 rounded-lg transition ${activeTab === 'customers' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800'}`}><User className="w-5 h-5"/> Kunden</button>
-            <button onClick={() => setActiveTab('vendors')} className={`w-full flex items-center gap-3 p-3 rounded-lg transition ${activeTab === 'vendors' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800'}`}><Truck className="w-5 h-5"/> Lieferanten</button>
-            <button onClick={() => setActiveTab('items')} className={`w-full flex items-center gap-3 p-3 rounded-lg transition ${activeTab === 'items' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800'}`}><Package className="w-5 h-5"/> Artikel</button>
-            <button onClick={() => setActiveTab('suppliers')} className={`w-full flex items-center gap-3 p-3 rounded-lg transition ${activeTab === 'suppliers' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800'}`}><Briefcase className="w-5 h-5"/> Eigene Profile</button>
-            <button onClick={() => setActiveTab('settings')} className={`w-full flex items-center gap-3 p-3 rounded-lg transition ${activeTab === 'settings' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800'}`}><Settings className="w-5 h-5"/> Einstellungen</button>
+        {/* LOGO BEREICH (Nur Desktop sichtbar, Mobile hat eigenes Logo oben) */}
+        <div className="hidden md:block mb-10 px-2">
+            <img 
+                src="/logo.png" 
+                alt="BillingFlow" 
+                className="w-48 mb-3 object-contain" 
+            />
+            <p className={`text-[10px] uppercase tracking-widest font-bold leading-relaxed pl-1 ${currentThemeKey === 'dark' ? 'text-slate-500' : 'text-slate-400'}`}>
+                Rechnung digital,<br/>Buchung genial.
+            </p>
         </div>
         
-        <div className="mt-auto pt-6 border-t border-slate-800">
-          <button onClick={handleLogout} className="flex items-center gap-2 text-red-400 hover:text-white transition text-sm w-full p-2 rounded hover:bg-slate-800"><LogOut className="w-4 h-4" /> Abmelden</button>
+        {/* NAVIGATION LINKS */}
+        <div className="space-y-1">
+            {/* Helper Funktion für Buttons (Jetzt mit Auto-Close für Mobile!) */}
+            {(() => {
+                const NavBtn = ({ id, icon: Icon, label }) => (
+                    <button 
+                        onClick={() => {
+                            setActiveTab(id);
+                            setMobileMenuOpen(false); // <--- WICHTIG: Menü schließen beim Klick!
+                        }} 
+                        className={`w-full flex items-center gap-3 p-3 rounded-xl text-sm font-bold transition-all duration-200 
+                        ${activeTab === id ? theme.activeBtn : theme.hoverBtn}`}
+                    >
+                        <Icon className={`w-5 h-5 ${activeTab === id ? 'text-white' : ''}`}/> 
+                        {label}
+                    </button>
+                );
+                const GroupTitle = ({ label }) => (
+                    <p className={`text-[10px] font-black uppercase tracking-widest mb-3 mt-8 px-3 opacity-50`}>{label}</p>
+                );
+
+                return (
+                    <>
+                        <p className="text-[10px] font-black uppercase tracking-widest mb-3 mt-2 px-3 opacity-50">Übersicht</p>
+                        <NavBtn id="dashboard" icon={LayoutDashboard} label="Dashboard" />
+
+                        <GroupTitle label="Verkauf" />
+                        <NavBtn id="invoice-editor" icon={ArrowUpRight} label="Neue Rechnung" />
+                        <NavBtn id="invoice-history" icon={History} label="Rechnungsarchiv" />
+                        
+                        <GroupTitle label="Einkauf" />
+                        <NavBtn id="expense-editor" icon={ArrowDownLeft} label="Neue Einkäufe" />
+                        <NavBtn id="expense-history" icon={History} label="Einkaufsarchiv" />
+
+                        <GroupTitle label="Verwaltung" />
+                        <NavBtn id="customers" icon={User} label="Kunden" />
+                        <NavBtn id="vendors" icon={Truck} label="Lieferanten" />
+                        <NavBtn id="items" icon={Package} label="Artikel" />
+                        <NavBtn id="suppliers" icon={Building} label="Eigene Profile" />
+                        <NavBtn id="settings" icon={Settings} label="Einstellungen" />
+                    </>
+                );
+            })()}
+        </div>
+        
+        <div className="mt-auto pt-6 border-t border-slate-100/10">
+          <button onClick={handleLogout} className="flex items-center gap-2 text-red-500 hover:text-red-700 hover:bg-red-50/10 transition text-sm font-bold w-full p-3 rounded-xl">
+            <LogOut className="w-4 h-4" /> Abmelden
+          </button>
         </div>
       </nav>
 
-      <main className="flex-1 p-4 md:p-10 overflow-y-auto h-screen scroll-smooth relative">
+      {/* 3. MOBILE OVERLAY (Dunkler Hintergrund, wenn Menü offen) */}
+      {mobileMenuOpen && (
+        <div 
+            className="fixed inset-0 bg-slate-900/60 z-40 md:hidden backdrop-blur-sm"
+            onClick={() => setMobileMenuOpen(false)}
+        ></div>
+      )}
+
+      {/* 4. MAIN CONTENT AREA */}
+      <main className="flex-1 p-4 md:p-10 overflow-y-auto h-[calc(100vh-64px)] md:h-screen scroll-smooth relative">
+        
         {/* VIEW MODAL OVERLAY */}
         {viewInvoice && (
             <div className="fixed inset-0 bg-slate-900/80 z-50 flex items-center justify-center p-4 overflow-y-auto backdrop-blur-sm">
@@ -1576,14 +1687,8 @@ function ErpSystem() {
                         <div className="flex gap-2">
                             <button 
                               onClick={() => {
-                                  // 1. Prefix bestimmen (Rechnung oder Korrektur?)
-                                  // WICHTIG: Hier nutzen wir 'viewInvoice' statt 'currentInvoice'!
                                   const prefix = viewInvoice.type === 'credit_note' ? 'Rechnungskorrektur' : 'Rechnung';
-                                  
-                                  // 2. Dateiname bauen
                                   const fileName = `${prefix}_${viewInvoice.number}.pdf`;
-                                  
-                                  // 3. PDF generieren
                                   generatePDF('invoice-preview-hidden', fileName);
                               }}
                               className="flex items-center gap-2 px-4 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-800 transition-colors"
@@ -1600,6 +1705,7 @@ function ErpSystem() {
             </div>
         )}
 
+        {/* DASHBOARD */}
         {activeTab === 'dashboard' && (
           <div className="space-y-6 animate-in fade-in duration-500">
              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
@@ -1626,886 +1732,179 @@ function ErpSystem() {
           </div>
         )}
 
-        {/* --- SETTINGS TAB (ÜBERARBEITET MIT UNTER-TABS) --- */}
+        {/* SETTINGS */}
         {activeTab === 'settings' && (
           <div className="max-w-5xl mx-auto bg-white rounded-xl shadow-sm border overflow-hidden animate-in slide-in-from-bottom-4 duration-500">
-             
-             {/* 1. Header & Tabs */}
              <div className="border-b bg-slate-50 p-4 flex flex-col md:flex-row justify-between items-center gap-4">
-                <div>
-                    <h2 className="text-2xl font-bold flex items-center gap-2 text-slate-800">
-                        <Settings className="w-6 h-6 text-blue-600"/> Einstellungen
-                    </h2>
-                </div>
-                
-                {/* DER TAB SWITCHER */}
+                <div><h2 className="text-2xl font-bold flex items-center gap-2 text-slate-800"><Settings className="w-6 h-6 text-blue-600"/> Einstellungen</h2></div>
                 <div className="flex bg-slate-200 p-1 rounded-lg gap-1">
-                    <button 
-                        onClick={() => setSettingsTab('profile')}
-                        className={`px-4 py-2 rounded-md text-sm font-bold transition ${settingsTab === 'profile' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                    >
-                        Firmenprofil
-                    </button>
-                    <button 
-                        onClick={() => setSettingsTab('config')} 
-                        className={`px-4 py-2 rounded-md text-sm font-bold transition ${settingsTab === 'config' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                    >
-                        Konfigurationen
-                    </button>
-                    <button 
-                        onClick={() => setSettingsTab('vat')}
-                        className={`px-4 py-2 rounded-md text-sm font-bold transition ${settingsTab === 'vat' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                    >
-                        Umsatzsteuersätze (EU)
-                    </button>
+                    <button onClick={() => setSettingsTab('profile')} className={`px-4 py-2 rounded-md text-sm font-bold transition ${settingsTab === 'profile' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Firmenprofil</button>
+                    <button onClick={() => setSettingsTab('config')} className={`px-4 py-2 rounded-md text-sm font-bold transition ${settingsTab === 'config' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Konfigurationen</button>
+                    <button onClick={() => setSettingsTab('vat')} className={`px-4 py-2 rounded-md text-sm font-bold transition ${settingsTab === 'vat' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Umsatzsteuersätze (EU)</button>
                 </div>
              </div>
-
-             {/* 2. INHALT: TAB "PROFIL" (Dein alter Code) */}
+             {/* Profile Tab Content */}
              {settingsTab === 'profile' && (
                  <div className="p-8">
                      <p className="text-slate-500 mb-8">Diese Daten erscheinen als Absender und im Fußbereich Ihrer Rechnungen.</p>
-                     
-                     {/* 1. LOGO UPLOAD BEREICH */}
                      <div className="mb-8 flex items-center gap-6 p-4 border border-dashed border-slate-300 rounded-xl bg-slate-50">
-                        <div className="shrink-0">
-                          {profile?.logoUrl ? (
-                            <img src={profile.logoUrl} alt="Firmenlogo" className="h-20 w-auto object-contain border bg-white rounded-md" />
-                          ) : (
-                            <div className="h-20 w-20 bg-slate-200 rounded-md flex items-center justify-center text-slate-400 text-xs text-center p-2">
-                              Kein Logo
-                            </div>
-                          )}
-                        </div>
-                        <div>
-                           <label className="block text-sm font-bold text-slate-700 mb-2">Firmenlogo hochladen</label>
-                           <input 
-                             type="file" 
-                             accept="image/*" 
-                             onChange={handleLogoUpload} 
-                             className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-                           />
-                           <p className="text-xs text-slate-400 mt-1">Empfohlen: PNG oder JPG mit transparentem Hintergrund.</p>
-                           {profile?.logoUrl && (
-                            <button 
-                              onClick={handleDeleteLogo}
-                              className="mt-3 flex items-center gap-2 text-red-500 hover:text-red-700 text-sm font-bold border border-red-200 bg-red-50 px-3 py-2 rounded hover:bg-red-100 transition"
-                            >
-                              <Trash2 className="w-4 h-4" /> Logo entfernen
-                            </button>
-                          )}
-                        </div>
+                        <div className="shrink-0">{profile?.logoUrl ? (<img src={profile.logoUrl} alt="Firmenlogo" className="h-20 w-auto object-contain border bg-white rounded-md" />) : (<div className="h-20 w-20 bg-slate-200 rounded-md flex items-center justify-center text-slate-400 text-xs text-center p-2">Kein Logo</div>)}</div>
+                        <div><label className="block text-sm font-bold text-slate-700 mb-2">Firmenlogo hochladen</label><input type="file" accept="image/*" onChange={handleLogoUpload} className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/><p className="text-xs text-slate-400 mt-1">Empfohlen: PNG oder JPG mit transparentem Hintergrund.</p>{profile?.logoUrl && (<button onClick={handleDeleteLogo} className="mt-3 flex items-center gap-2 text-red-500 hover:text-red-700 text-sm font-bold border border-red-200 bg-red-50 px-3 py-2 rounded hover:bg-red-100 transition"><Trash2 className="w-4 h-4" /> Logo entfernen</button>)}</div>
                      </div>
-
-                     {/* 2. FORMULARFELDER (ADRESSE, KONTAKT, BANK) */}
                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                        <div className="md:col-span-2 space-y-4"><h3 className="font-bold text-sm uppercase tracking-wider text-slate-400 border-b pb-2">Allgemeine Daten</h3>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="md:col-span-2"><label className="block text-xs font-bold text-slate-500 mb-1">Firmenname <span className="text-red-500">*</span></label><input className="w-full p-2 border rounded" placeholder="Muster GmbH" value={profile?.company || ''} onChange={e => setProfile({...profile, company: e.target.value})} /></div>
-                            <div><label className="block text-xs font-bold text-slate-500 mb-1">Straße <span className="text-red-500">*</span></label><input className="w-full p-2 border rounded" placeholder="Hauptstr." value={profile?.street || ''} onChange={e => setProfile({...profile, street: e.target.value})} /></div>
-                            <div><label className="block text-xs font-bold text-slate-500 mb-1">Hausnummer <span className="text-red-500">*</span></label><input className="w-full p-2 border rounded" placeholder="10 a" value={profile?.houseNumber || ''} onChange={e => setProfile({...profile, houseNumber: e.target.value})} /></div>
-                            <div className="md:col-span-2"><label className="block text-xs font-bold text-slate-500 mb-1">Adresszusatz</label><input className="w-full p-2 border rounded" placeholder="Hinterhaus" value={profile?.addressSupplement || ''} onChange={e => setProfile({...profile, addressSupplement: e.target.value})} /></div>
-                            <div><label className="block text-xs font-bold text-slate-500 mb-1">PLZ <span className="text-red-500">*</span></label><input className="w-full p-2 border rounded" placeholder="10115" value={profile?.zip || ''} onChange={e => setProfile({...profile, zip: e.target.value})} /></div>
-                            <div><label className="block text-xs font-bold text-slate-500 mb-1">Ort <span className="text-red-500">*</span></label><input className="w-full p-2 border rounded" placeholder="Berlin" value={profile?.city || ''} onChange={e => setProfile({...profile, city: e.target.value})} /></div>
-                            <div className="md:col-span-2"><label className="block text-xs font-bold text-slate-500 mb-1">Land <span className="text-red-500">*</span></label><input className="w-full p-2 border rounded" placeholder="Deutschland" value={profile?.country || ''} onChange={e => setProfile({...profile, country: e.target.value})} /></div>
-                          </div>
-                        </div>
+                        {/* Deine Profil-Felder (gekürzt dargestellt, sind aber da) */}
+                        <div className="md:col-span-2 space-y-4"><h3 className="font-bold text-sm uppercase tracking-wider text-slate-400 border-b pb-2">Allgemeine Daten</h3><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div className="md:col-span-2"><label className="block text-xs font-bold text-slate-500 mb-1">Firmenname <span className="text-red-500">*</span></label><input className="w-full p-2 border rounded" placeholder="Muster GmbH" value={profile?.company || ''} onChange={e => setProfile({...profile, company: e.target.value})} /></div><div><label className="block text-xs font-bold text-slate-500 mb-1">Straße <span className="text-red-500">*</span></label><input className="w-full p-2 border rounded" placeholder="Hauptstr." value={profile?.street || ''} onChange={e => setProfile({...profile, street: e.target.value})} /></div><div><label className="block text-xs font-bold text-slate-500 mb-1">Hausnummer <span className="text-red-500">*</span></label><input className="w-full p-2 border rounded" placeholder="10 a" value={profile?.houseNumber || ''} onChange={e => setProfile({...profile, houseNumber: e.target.value})} /></div><div className="md:col-span-2"><label className="block text-xs font-bold text-slate-500 mb-1">Adresszusatz</label><input className="w-full p-2 border rounded" placeholder="Hinterhaus" value={profile?.addressSupplement || ''} onChange={e => setProfile({...profile, addressSupplement: e.target.value})} /></div><div><label className="block text-xs font-bold text-slate-500 mb-1">PLZ <span className="text-red-500">*</span></label><input className="w-full p-2 border rounded" placeholder="10115" value={profile?.zip || ''} onChange={e => setProfile({...profile, zip: e.target.value})} /></div><div><label className="block text-xs font-bold text-slate-500 mb-1">Ort <span className="text-red-500">*</span></label><input className="w-full p-2 border rounded" placeholder="Berlin" value={profile?.city || ''} onChange={e => setProfile({...profile, city: e.target.value})} /></div><div className="md:col-span-2"><label className="block text-xs font-bold text-slate-500 mb-1">Land <span className="text-red-500">*</span></label><input className="w-full p-2 border rounded" placeholder="Deutschland" value={profile?.country || ''} onChange={e => setProfile({...profile, country: e.target.value})} /></div></div></div>
                         <div className="space-y-4"><h3 className="font-bold text-sm uppercase tracking-wider text-slate-400 border-b pb-2">Kontakt & Steuer</h3><div><label className="block text-xs font-bold text-slate-500 mb-1">USt-IdNr. <span className="text-red-500">*</span></label><input className="w-full p-2 border rounded" placeholder="DE123456789" value={profile?.taxId || ''} onChange={e => setProfile({...profile, taxId: e.target.value})} /></div><div><label className="block text-xs font-bold text-slate-500 mb-1">E-Mail</label><input className="w-full p-2 border rounded" placeholder="info@firma.de" value={profile?.email || ''} onChange={e => setProfile({...profile, email: e.target.value})} /></div><div><label className="block text-xs font-bold text-slate-500 mb-1">Telefon</label><input className="w-full p-2 border rounded" placeholder="+49 30 123456" value={profile?.phone || ''} onChange={e => setProfile({...profile, phone: e.target.value})} /></div></div>
                         <div className="space-y-4"><h3 className="font-bold text-sm uppercase tracking-wider text-slate-400 border-b pb-2">Geschäftsführung</h3><div><label className="block text-xs font-bold text-slate-500 mb-1">Vorname <span className="text-red-500">*</span></label><input className="w-full p-2 border rounded" placeholder="Max" value={profile?.ceoFirstName || ''} onChange={e => setProfile({...profile, ceoFirstName: e.target.value})} /></div><div><label className="block text-xs font-bold text-slate-500 mb-1">Nachname <span className="text-red-500">*</span></label><input className="w-full p-2 border rounded" placeholder="Mustermann" value={profile?.ceoLastName || ''} onChange={e => setProfile({...profile, ceoLastName: e.target.value})} /></div></div>
                         <div className="md:col-span-2 space-y-4 mt-4"><h3 className="font-bold text-sm uppercase tracking-wider text-slate-400 border-b pb-2 flex items-center gap-2"><Landmark className="w-4 h-4"/> Bank & Registergericht</h3><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div><label className="block text-xs font-bold text-slate-500 mb-1">Bankname <span className="text-red-500">*</span></label><input className="w-full p-2 border rounded" placeholder="Volksbank Berlin" value={profile?.bankName || ''} onChange={e => setProfile({...profile, bankName: e.target.value})} /></div><div><label className="block text-xs font-bold text-slate-500 mb-1">IBAN <span className="text-red-500">*</span></label><input className="w-full p-2 border rounded font-mono" placeholder="DE00 0000 0000 0000 0000 00" value={profile?.iban || ''} onChange={e => setProfile({...profile, iban: e.target.value})} /></div><div><label className="block text-xs font-bold text-slate-500 mb-1">BIC <span className="text-red-500">*</span></label><input className="w-full p-2 border rounded font-mono" placeholder="GENODED1BER" value={profile?.bic || ''} onChange={e => setProfile({...profile, bic: e.target.value})} /></div><div><label className="block text-xs font-bold text-slate-500 mb-1">Registergericht <span className="text-red-500">*</span></label><input className="w-full p-2 border rounded" placeholder="Berlin-Charlottenburg" value={profile?.registerCourt || ''} onChange={e => setProfile({...profile, registerCourt: e.target.value})} /></div><div><label className="block text-xs font-bold text-slate-500 mb-1">Handelsregisternummer <span className="text-red-500">*</span></label><input className="w-full p-2 border rounded" placeholder="HRB 12345" value={profile?.registerNumber || ''} onChange={e => setProfile({...profile, registerNumber: e.target.value})} /></div></div></div>
                      </div>
-
-                     <div className="flex justify-end border-t pt-6">
-                        <button onClick={() => handleSaveProfile(profile)} className="bg-green-600 text-white px-8 py-3 rounded-lg font-bold shadow-lg hover:bg-green-700 flex items-center gap-2"><Save className="w-5 h-5"/> Profil speichern</button>
-                     </div>
+                     <div className="flex justify-end border-t pt-6"><button onClick={() => handleSaveProfile(profile)} className="bg-green-600 text-white px-8 py-3 rounded-lg font-bold shadow-lg hover:bg-green-700 flex items-center gap-2"><Save className="w-5 h-5"/> Profil speichern</button></div>
                  </div>
              )}
-
-             {/* 4. NEU: INHALT TAB "KONFIGURATIONEN" */}
+             {/* Config Tab Content */}
              {settingsTab === 'config' && (
                  <div className="p-8 animate-in fade-in slide-in-from-right-4">
-                     <div className="flex justify-between items-end mb-6">
-                        <div>
-                            <h3 className="text-lg font-bold text-slate-800">System-Konfigurationen</h3>
-                            <p className="text-sm text-slate-500 mt-1">
-                                Verwalten Sie hier Ihre Nummernkreise für Rechnungen und Gutschriften.
-                            </p>
-                        </div>
-                        {/* Speicher-Button im Config Tab */}
-                        <button 
-                            onClick={() => handleSaveProfile(profile, "Konfigurationen gespeichert!")} 
-                            className="bg-green-600 text-white px-6 py-2 rounded-lg font-bold shadow hover:bg-green-700 flex items-center gap-2"
-                        >
-                            <Save className="w-4 h-4"/> Einstellungen speichern
-                        </button>
-                     </div>
-
-                     {/* RECHNUNGSNUMMERN BLOCK */}
+                     <div className="flex justify-between items-end mb-6"><div><h3 className="text-lg font-bold text-slate-800">System-Konfigurationen</h3><p className="text-sm text-slate-500 mt-1">Verwalten Sie hier Ihre Nummernkreise und das Design.</p></div><button onClick={() => handleSaveProfile(profile, "Konfigurationen gespeichert!")} className="bg-green-600 text-white px-6 py-2 rounded-lg font-bold shadow hover:bg-green-700 flex items-center gap-2"><Save className="w-4 h-4"/> Einstellungen speichern</button></div>
                      <div className="bg-slate-50 border border-slate-200 p-6 rounded-xl space-y-4 mb-8">
-                        <h3 className="font-bold text-slate-700 flex items-center gap-2">
-                          <Hash className="w-5 h-5 text-slate-500"/> Rechnungsnummern
-                        </h3>
-                        <p className="text-xs text-slate-500 mb-4">
-                          Hier legen Sie fest, wie Ihre Rechnungsnummern aussehen sollen. Das System zählt automatisch hoch.
-                        </p>
-                        
+                        {/* Nummernkreise */}
+                        <h3 className="font-bold text-slate-700 flex items-center gap-2"><Hash className="w-5 h-5 text-slate-500"/> Rechnungsnummern</h3>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                           <div>
-                              <label className="block text-xs font-bold text-slate-500 mb-1">Präfix (Kreis)</label>
-                              <input 
-                                className="w-full p-2 border rounded font-mono bg-white" 
-                                placeholder="RE-2026"
-                                value={profile?.invoicePrefix || 'RE-2026'} 
-                                onChange={e => setProfile({...profile, invoicePrefix: e.target.value})} 
-                              />
-                              <p className="text-[10px] text-slate-400 mt-1">z.B. "RE", "2026" oder "MUC-24"</p>
-                           </div>
-
-                           <div>
-                              <label className="block text-xs font-bold text-slate-500 mb-1">Nächste laufende Nummer</label>
-                              <input 
-                                type="number"
-                                className="w-full p-2 border rounded font-mono bg-white" 
-                                placeholder="1000"
-                                value={profile?.nextInvoiceNumber || '1000'} 
-                                onChange={e => setProfile({...profile, nextInvoiceNumber: e.target.value})} 
-                              />
-                              <p className="text-[10px] text-slate-400 mt-1">Zähler erhöht sich automatisch (+1).</p>
-                           </div>
-
-                           <div>
-                              <label className="block text-xs font-bold text-slate-500 mb-1">Vorschau</label>
-                              <div className="w-full p-2 border bg-white rounded font-mono text-slate-700 font-bold">
-                                {profile?.invoicePrefix || 'RE'}-{String(profile?.nextInvoiceNumber || '1000').padStart(4, '0')}
-                              </div>
-                           </div>
+                           <div><label className="block text-xs font-bold text-slate-500 mb-1">Präfix</label><input className="w-full p-2 border rounded font-mono bg-white" value={profile?.invoicePrefix || 'RE-2026'} onChange={e => setProfile({...profile, invoicePrefix: e.target.value})} /></div>
+                           <div><label className="block text-xs font-bold text-slate-500 mb-1">Nächste Nummer</label><input type="number" className="w-full p-2 border rounded font-mono bg-white" value={profile?.nextInvoiceNumber || '1000'} onChange={e => setProfile({...profile, nextInvoiceNumber: e.target.value})} /></div>
+                           <div><label className="block text-xs font-bold text-slate-500 mb-1">Vorschau</label><div className="w-full p-2 border bg-white rounded font-mono text-slate-700 font-bold">{profile?.invoicePrefix || 'RE'}-{String(profile?.nextInvoiceNumber || '1000').padStart(4, '0')}</div></div>
                         </div>
-
-                        {/* TRENNLINIE */}
                         <div className="border-t border-slate-200 my-6"></div>
-
-                        {/* GUTSCHRIFTEN BLOCK */}
-                        <h3 className="font-bold text-slate-700 flex items-center gap-2 mb-4">
-                          <ArrowDownLeft className="w-5 h-5 text-slate-500"/> Gutschriften / Korrekturen
-                        </h3>
+                        <h3 className="font-bold text-slate-700 flex items-center gap-2 mb-4"><ArrowDownLeft className="w-5 h-5 text-slate-500"/> Gutschriften</h3>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                           <div>
-                              <label className="block text-xs font-bold text-slate-500 mb-1">Präfix (Gutschrift)</label>
-                              <input 
-                                className="w-full p-2 border rounded font-mono bg-white" 
-                                placeholder="GS-2026"
-                                value={profile?.creditNotePrefix || 'GS-2026'} 
-                                onChange={e => setProfile({...profile, creditNotePrefix: e.target.value})} 
-                              />
-                           </div>
-
-                           <div>
-                              <label className="block text-xs font-bold text-slate-500 mb-1">Nächste Nummer</label>
-                              <input 
-                                type="number"
-                                className="w-full p-2 border rounded font-mono bg-white" 
-                                placeholder="1000"
-                                value={profile?.nextCreditNoteNumber || '1000'} 
-                                onChange={e => setProfile({...profile, nextCreditNoteNumber: e.target.value})} 
-                              />
-                           </div>
-
-                           <div>
-                              <label className="block text-xs font-bold text-slate-500 mb-1">Vorschau</label>
-                              <div className="w-full p-2 border bg-white rounded font-mono text-slate-700 font-bold">
-                                {profile?.creditNotePrefix || 'GS'}-{String(profile?.nextCreditNoteNumber || '1000').padStart(4, '0')}
-                              </div>
-                           </div>
+                           <div><label className="block text-xs font-bold text-slate-500 mb-1">Präfix</label><input className="w-full p-2 border rounded font-mono bg-white" value={profile?.creditNotePrefix || 'GS-2026'} onChange={e => setProfile({...profile, creditNotePrefix: e.target.value})} /></div>
+                           <div><label className="block text-xs font-bold text-slate-500 mb-1">Nächste Nummer</label><input type="number" className="w-full p-2 border rounded font-mono bg-white" value={profile?.nextCreditNoteNumber || '1000'} onChange={e => setProfile({...profile, nextCreditNoteNumber: e.target.value})} /></div>
+                           <div><label className="block text-xs font-bold text-slate-500 mb-1">Vorschau</label><div className="w-full p-2 border bg-white rounded font-mono text-slate-700 font-bold">{profile?.creditNotePrefix || 'GS'}-{String(profile?.nextCreditNoteNumber || '1000').padStart(4, '0')}</div></div>
                         </div>
-
-                        {/* TRENNLINIE */}
                         <div className="border-t border-slate-200 my-6"></div>
-
-                        {/* NEU: PFLICHTFELDER KONFIGURATION (Punkt B) */}
-                        <h3 className="font-bold text-slate-700 flex items-center gap-2 mb-4">
-                          <CheckCircle className="w-5 h-5 text-slate-500"/> Felder & Pflichtangaben
-                        </h3>
+                        {/* Pflichtfelder Config */}
+                        <h3 className="font-bold text-slate-700 flex items-center gap-2 mb-4"><CheckCircle className="w-5 h-5 text-slate-500"/> Felder & Pflichtangaben</h3>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                           
-                           {/* Konfiguration: Bestellnummer */}
                            <div className="bg-white p-4 rounded border flex flex-col justify-between gap-4">
-                              <div className="flex items-center justify-between">
-                                  <div>
-                                      <span className="font-bold text-sm text-slate-700">Bestellnummer (PO)</span>
-                                      <p className="text-xs text-slate-400">Feld im Editor anzeigen</p>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                      <input 
-                                        type="checkbox" 
-                                        className="accent-blue-600 w-4 h-4"
-                                        checked={profile?.showOrderNumber || false} 
-                                        onChange={e => setProfile({...profile, showOrderNumber: e.target.checked})} 
-                                      />
-                                      <span className="text-sm font-bold text-slate-600">Aktiv</span>
-                                  </div>
-                              </div>
-                              
-                              {/* Unter-Option: Pflichtfeld (nur wenn aktiv) */}
-                              {profile?.showOrderNumber && (
-                                   <div className="bg-slate-50 p-2 rounded flex items-center gap-2 text-xs text-slate-600 border border-slate-100">
-                                       <ArrowUpRight className="w-4 h-4 text-slate-400" />
-                                       <input 
-                                            type="checkbox" 
-                                            checked={profile?.requireOrderNumber || false}
-                                            onChange={e => setProfile({...profile, requireOrderNumber: e.target.checked})}
-                                       />
-                                       <span>Als <strong>Pflichtfeld</strong> markieren (Speichern ohne Nr. blockieren)</span>
-                                   </div>
-                               )}
+                              <div className="flex items-center justify-between"><div><span className="font-bold text-sm text-slate-700">Bestellnummer (PO)</span><p className="text-xs text-slate-400">Feld im Editor anzeigen</p></div><div className="flex items-center gap-2"><input type="checkbox" className="accent-blue-600 w-4 h-4" checked={profile?.showOrderNumber || false} onChange={e => setProfile({...profile, showOrderNumber: e.target.checked})} /><span className="text-sm font-bold text-slate-600">Aktiv</span></div></div>
+                              {profile?.showOrderNumber && (<div className="bg-slate-50 p-2 rounded flex items-center gap-2 text-xs text-slate-600 border border-slate-100"><ArrowUpRight className="w-4 h-4 text-slate-400" /><input type="checkbox" checked={profile?.requireOrderNumber || false} onChange={e => setProfile({...profile, requireOrderNumber: e.target.checked})}/><span>Als <strong>Pflichtfeld</strong> markieren</span></div>)}
                            </div>
-
-                           {/* Konfiguration: Kundennummer */}
-                           <div className="bg-white p-4 rounded border flex items-center justify-between">
-                              <div>
-                                  <span className="font-bold text-sm text-slate-700">Kundennummer</span>
-                                  <p className="text-xs text-slate-400">Auf der Rechnung anzeigen</p>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                  <input 
-                                    type="checkbox" 
-                                    className="accent-blue-600 w-4 h-4"
-                                    checked={profile?.showCustomerNumber || false} 
-                                    onChange={e => setProfile({...profile, showCustomerNumber: e.target.checked})} 
-                                  />
-                                  <span className="text-sm font-bold text-slate-600">Aktiv</span>
-                              </div>
-                           </div>
+                           <div className="bg-white p-4 rounded border flex items-center justify-between"><div><span className="font-bold text-sm text-slate-700">Kundennummer</span><p className="text-xs text-slate-400">Auf der Rechnung anzeigen</p></div><div className="flex items-center gap-2"><input type="checkbox" className="accent-blue-600 w-4 h-4" checked={profile?.showCustomerNumber || false} onChange={e => setProfile({...profile, showCustomerNumber: e.target.checked})} /><span className="text-sm font-bold text-slate-600">Aktiv</span></div></div>
                         </div>
-
+                        <div className="border-t border-slate-200 my-6"></div>
+                        {/* THEME SWITCHER */}
+                        <h3 className="font-bold text-slate-700 flex items-center gap-2 mb-4"><Eye className="w-5 h-5 text-slate-500"/> Design & Erscheinungsbild</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <button onClick={() => { setProfile({...profile, theme: 'light'}); if(activeCompanyId) updateDoc(doc(db, 'companies', activeCompanyId, 'settings', 'profile'), { theme: 'light' }); }} className={`p-4 rounded-xl border-2 flex flex-col items-center gap-3 transition-all ${profile.theme === 'light' || !profile.theme ? 'border-blue-500 bg-blue-50' : 'border-slate-100 hover:border-blue-200'}`}><div className="w-full h-16 bg-slate-50 rounded-lg border border-slate-200 flex overflow-hidden"><div className="w-1/3 bg-white border-r border-slate-200 h-full"></div></div><span className="font-bold text-slate-700">Modern Light</span></button>
+                            <button onClick={() => { setProfile({...profile, theme: 'dark'}); if(activeCompanyId) updateDoc(doc(db, 'companies', activeCompanyId, 'settings', 'profile'), { theme: 'dark' }); }} className={`p-4 rounded-xl border-2 flex flex-col items-center gap-3 transition-all ${profile.theme === 'dark' ? 'border-slate-800 bg-slate-100' : 'border-slate-100 hover:border-slate-300'}`}><div className="w-full h-16 bg-slate-950 rounded-lg border border-slate-800 flex overflow-hidden"><div className="w-1/3 bg-slate-900 border-r border-slate-800 h-full"></div></div><span className="font-bold text-slate-700">Classic Dark</span></button>
+                            <button onClick={() => { setProfile({...profile, theme: 'berry'}); if(activeCompanyId) updateDoc(doc(db, 'companies', activeCompanyId, 'settings', 'profile'), { theme: 'berry' }); }} className={`p-4 rounded-xl border-2 flex flex-col items-center gap-3 transition-all ${profile.theme === 'berry' ? 'border-fuchsia-500 bg-fuchsia-50' : 'border-slate-100 hover:border-fuchsia-200'}`}><div className="w-full h-16 bg-white rounded-lg border border-fuchsia-100 flex overflow-hidden"><div className="w-1/3 bg-fuchsia-50 border-r border-fuchsia-200 h-full"></div></div><span className="font-bold text-fuchsia-700">Berry & Rose</span></button>
+                        </div>
                      </div>
                  </div>
              )}
-
-             {/* 3. INHALT: TAB "UMSATZSTEUER" (NEU) */}
+             {/* VAT Tab Content */}
              {settingsTab === 'vat' && (
                  <div className="p-8">
-                    <div className="flex justify-between items-end mb-6">
-                        <div>
-                            <h3 className="text-lg font-bold text-slate-800">EU-Umsatzsteuersätze (OSS)</h3>
-                            <p className="text-sm text-slate-500 mt-1 max-w-2xl">
-                                Diese Tabelle definiert die Steuersätze für den One-Stop-Shop (OSS). 
-                                Wenn Sie an Privatkunden im EU-Ausland verkaufen, wird der hier hinterlegte Satz angewendet.
-                            </p>
-                        </div>
-                        <button onClick={handleSaveVatRates} className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold shadow hover:bg-blue-700 flex items-center gap-2">
-                            <Save className="w-4 h-4"/> Sätze speichern
-                        </button>
-                    </div>
-
+                    <div className="flex justify-between items-end mb-6"><div><h3 className="text-lg font-bold text-slate-800">EU-Umsatzsteuersätze (OSS)</h3><p className="text-sm text-slate-500 mt-1 max-w-2xl">Wenn Sie an Privatkunden im EU-Ausland verkaufen, wird der hier hinterlegte Satz angewendet.</p></div><button onClick={handleSaveVatRates} className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold shadow hover:bg-blue-700 flex items-center gap-2"><Save className="w-4 h-4"/> Sätze speichern</button></div>
                     <div className="border rounded-lg overflow-hidden shadow-sm">
                         <table className="w-full text-sm text-left">
-                            <thead className="bg-slate-100 text-slate-500 font-bold uppercase text-xs">
-                                <tr>
-                                    <th className="p-4 w-16">Code</th>
-                                    <th className="p-4">Land</th>
-                                    <th className="p-4 w-32">Normal (%)</th>
-                                    <th className="p-4 w-32">Ermäßigt 1 (%)</th>
-                                    <th className="p-4 w-32">Ermäßigt 2 (%)</th>
-                                </tr>
-                            </thead>
+                            <thead className="bg-slate-100 text-slate-500 font-bold uppercase text-xs"><tr><th className="p-4 w-16">Code</th><th className="p-4">Land</th><th className="p-4 w-32">Normal (%)</th><th className="p-4 w-32">Ermäßigt 1 (%)</th><th className="p-4 w-32">Ermäßigt 2 (%)</th></tr></thead>
                             <tbody className="divide-y divide-slate-100">
                                 {vatRates.map((rate, index) => (
-                                    <tr key={rate.code} className="hover:bg-slate-50 transition">
-                                        <td className="p-4 font-mono font-bold text-slate-400">{rate.code}</td>
-                                        <td className="p-4 font-medium text-slate-800">{rate.country}</td>
-                                        
-                                        {/* Input: Normal */}
-                                        <td className="p-4">
-                                            <div className="relative">
-                                                <input 
-                                                    type="number" 
-                                                    className="w-full p-2 border rounded font-bold text-center focus:ring-2 focus:ring-blue-500 outline-none"
-                                                    value={rate.standard}
-                                                    onChange={(e) => {
-                                                        const newRates = [...vatRates];
-                                                        newRates[index].standard = parseFloat(e.target.value);
-                                                        setVatRates(newRates);
-                                                    }}
-                                                />
-                                            </div>
-                                        </td>
-
-                                        {/* Input: Ermäßigt 1 */}
-                                        <td className="p-4">
-                                            <input 
-                                                type="number" 
-                                                className="w-full p-2 border rounded text-center text-slate-600 focus:ring-2 focus:ring-blue-500 outline-none"
-                                                value={rate.reduced1}
-                                                onChange={(e) => {
-                                                    const newRates = [...vatRates];
-                                                    newRates[index].reduced1 = parseFloat(e.target.value);
-                                                    setVatRates(newRates);
-                                                }}
-                                            />
-                                        </td>
-
-                                        {/* Input: Ermäßigt 2 */}
-                                        <td className="p-4">
-                                            <input 
-                                                type="number" 
-                                                className="w-full p-2 border rounded text-center text-slate-600 focus:ring-2 focus:ring-blue-500 outline-none"
-                                                value={rate.reduced2}
-                                                onChange={(e) => {
-                                                    const newRates = [...vatRates];
-                                                    newRates[index].reduced2 = parseFloat(e.target.value);
-                                                    setVatRates(newRates);
-                                                }}
-                                            />
-                                        </td>
-                                    </tr>
+                                    <tr key={rate.code} className="hover:bg-slate-50 transition"><td className="p-4 font-mono font-bold text-slate-400">{rate.code}</td><td className="p-4 font-medium text-slate-800">{rate.country}</td><td className="p-4"><input type="number" className="w-full p-2 border rounded font-bold text-center outline-none focus:ring-2" value={rate.standard} onChange={(e) => { const newRates = [...vatRates]; newRates[index].standard = parseFloat(e.target.value); setVatRates(newRates); }} /></td><td className="p-4"><input type="number" className="w-full p-2 border rounded text-center outline-none focus:ring-2" value={rate.reduced1} onChange={(e) => { const newRates = [...vatRates]; newRates[index].reduced1 = parseFloat(e.target.value); setVatRates(newRates); }} /></td><td className="p-4"><input type="number" className="w-full p-2 border rounded text-center outline-none focus:ring-2" value={rate.reduced2} onChange={(e) => { const newRates = [...vatRates]; newRates[index].reduced2 = parseFloat(e.target.value); setVatRates(newRates); }} /></td></tr>
                                 ))}
                             </tbody>
                         </table>
                     </div>
                  </div>
              )}
-
           </div>
         )}
 
+        {/* MANAGERS */}
         {activeTab === 'customers' && <ModuleManager title="Kundenmanagement" data={customers} collectionName="customers" icon={User} fields={addressFields} />}
         {activeTab === 'vendors' && <ModuleManager title="Lieferantenmanagement (Externe)" data={vendors} collectionName="vendors" icon={Truck} fields={addressFields} />}
         {activeTab === 'suppliers' && <ModuleManager title="Andere Absender / Profile" data={suppliers} collectionName="suppliers" icon={Building} fields={fullProfileFields} />}
         {activeTab === 'items' && <ModuleManager title="Artikelkatalog" data={items} collectionName="items" icon={Package} fields={itemFields} />}
 
-        {/* --- INVOICE EDITOR (RESTORED & UPDATED) --- */}
+        {/* INVOICE EDITOR */}
         {activeTab === 'invoice-editor' && (
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 pb-20 animate-in fade-in slide-in-from-bottom-4">
-             {/* LINKER BEREICH: EINGABEMASKE */}
+             {/* EDITIER SPALTE (LINKS) */}
              <div className="space-y-6">
-                
-                {/* 1. KOPFDATEN */}
                 <div className="bg-white p-6 rounded-xl shadow-sm border space-y-4">
-                   <h2 className="text-lg font-bold border-b pb-2 flex items-center gap-2 text-blue-600">
-                      <FileText className="w-5 h-5"/> Rechnungsdaten
-                   </h2>
-                   
+                   <h2 className="text-lg font-bold border-b pb-2 flex items-center gap-2 text-blue-600"><FileText className="w-5 h-5"/> Rechnungsdaten</h2>
                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {/* Absender Wahl */}
+                      <div><label className="text-xs font-bold text-slate-500 block mb-1">Absender</label><select className="w-full p-2 border rounded bg-slate-50 font-medium" value={currentInvoice.supplierId} onChange={e => setCurrentInvoice({...currentInvoice, supplierId: e.target.value})}><option value="main_profile">Mein Hauptprofil (Standard)</option>{suppliers.map(s => <option key={s.id} value={s.id}>{s.company}</option>)}</select></div>
                       <div>
-                        <label className="text-xs font-bold text-slate-500 block mb-1">Absender</label>
-                        <select 
-                          className="w-full p-2 border rounded bg-slate-50 font-medium"
-                          value={currentInvoice.supplierId}
-                          onChange={e => setCurrentInvoice({...currentInvoice, supplierId: e.target.value})}
-                        >
-                          <option value="main_profile">Mein Hauptprofil (Standard)</option>
-                          {suppliers.map(s => <option key={s.id} value={s.id}>{s.company}</option>)}
-                        </select>
+                        <label className="text-xs font-bold text-slate-500 block mb-1">Kunde</label>
+                        <select className={`w-full p-2 border rounded font-bold ${!currentInvoice.customerId ? 'border-red-300 bg-red-50' : 'bg-white'}`} value={currentInvoice.customerId} onChange={e => { const cust = customers.find(c => c.id === e.target.value); let newZone = 'DE'; let newOssCountry = ''; if (cust) { const euCountry = vatRates.find(r => r.country === cust.country); if (cust.country === 'Deutschland' || !cust.country) { newZone = 'DE'; } else if (euCountry) { if (cust.taxId && cust.taxId.length > 2) { newZone = 'EU_REV'; } else { newZone = 'EU_OSS'; newOssCountry = euCountry.code; } } else { newZone = 'NON_EU'; } } setCurrentInvoice({ ...currentInvoice, customerId: e.target.value, countryZone: newZone, ossCountryCode: newOssCountry }); }}><option value="">-- Kunde wählen --</option>{customers.map(c => <option key={c.id} value={c.id}>{getDisplayName(c)}</option>)}</select>
+                        {customers.find(c => c.id === currentInvoice.customerId)?.isCollective && (<div className="mt-4 bg-orange-50 p-4 rounded-lg border border-orange-200 animate-in fade-in"><h4 className="text-orange-800 text-xs font-bold uppercase mb-2">Manuelle Anschrift</h4><div className="grid grid-cols-1 gap-2"><input type="text" placeholder="Firma / Name" className="w-full p-2 border rounded text-sm" value={currentInvoice.manualName || ''} onChange={e => setCurrentInvoice({...currentInvoice, manualName: e.target.value})} /><input type="text" placeholder="Straße" className="w-full p-2 border rounded text-sm" value={currentInvoice.manualStreet || ''} onChange={e => setCurrentInvoice({...currentInvoice, manualStreet: e.target.value})} /><div className="flex gap-2"><input type="text" placeholder="PLZ" className="w-24 p-2 border rounded text-sm" value={currentInvoice.manualZip || ''} onChange={e => setCurrentInvoice({...currentInvoice, manualZip: e.target.value})} /><input type="text" placeholder="Stadt" className="w-full p-2 border rounded text-sm" value={currentInvoice.manualCity || ''} onChange={e => setCurrentInvoice({...currentInvoice, manualCity: e.target.value})} /><input type="text" placeholder="Land" className="w-full p-2 border rounded text-sm" value={currentInvoice.manualCountry || ''} onChange={e => setCurrentInvoice({...currentInvoice, manualCountry: e.target.value})} /></div></div></div>)}
                       </div>
-
-                      {/* Kunde Wahl (MIT AUTO-ERKENNUNG) */}
-                      <div>
-                        <label className="text-xs font-bold text-slate-500 block mb-1">Kunde (Empfänger)</label>
-                        <select 
-                           className={`w-full p-2 border rounded font-bold ${!currentInvoice.customerId ? 'border-red-300 bg-red-50' : 'bg-white'}`} 
-                           value={currentInvoice.customerId} 
-                           onChange={e => {
-                             const cust = customers.find(c => c.id === e.target.value);
-                             
-                             // --- LOGIK: STEUERZONE AUTOMATISCH ERKENNEN ---
-                             let newZone = 'DE';
-                             let newOssCountry = '';
-
-                             if (cust) {
-                                 // Prüfen, ob das Land in unserer EU-Liste ist
-                                 const euCountry = vatRates.find(r => r.country === cust.country);
-
-                                 if (cust.country === 'Deutschland' || !cust.country) {
-                                     // Fall A: Inland
-                                     newZone = 'DE';
-                                 } else if (euCountry) {
-                                     // Fall B: EU
-                                     if (cust.taxId && cust.taxId.length > 2) {
-                                         // Hat Steuer-ID -> B2B -> Reverse Charge
-                                         newZone = 'EU_REV';
-                                     } else {
-                                         // Keine Steuer-ID -> B2B/Privat -> OSS
-                                         newZone = 'EU_OSS';
-                                         newOssCountry = euCountry.code; // Automatisch das Land setzen!
-                                     }
-                                 } else {
-                                     // Fall C: Drittland
-                                     newZone = 'NON_EU';
-                                 }
-                             }
-                             // -----------------------------------------------
-
-                             setCurrentInvoice({
-                                 ...currentInvoice, 
-                                 customerId: e.target.value, 
-                                 countryZone: newZone,
-                                 ossCountryCode: newOssCountry
-                             });
-                           }}
-                        >
-                           <option value="">-- Kunde wählen --</option>
-                           {customers.map(c => <option key={c.id} value={c.id}>{getDisplayName(c)}</option>)}
-                        </select>
-                        {/* --- LOGIK FÜR SAMMELKUNDEN (MANUELLE ADRESSE) --- */}
-                        {(() => {
-                            // Prüfen, ob der aktuell gewählte Kunde ein "Sammelkunde" ist
-                            const selectedC = customers.find(c => c.id === currentInvoice.customerId);
-                            
-                            if (selectedC && selectedC.isCollective) {
-                                return (
-                                    <div className="mt-4 bg-orange-50 p-4 rounded-lg border border-orange-200 animate-in fade-in slide-in-from-top-2">
-                                        <h4 className="text-orange-800 text-xs font-bold uppercase mb-2 flex items-center gap-2">
-                                            <User className="w-3 h-3"/> Manuelle Anschrift (Laufkundschaft)
-                                        </h4>
-                                        <div className="grid grid-cols-1 gap-2">
-                                            <input 
-                                                type="text" 
-                                                placeholder="Firma / Name des Kunden"
-                                                className="w-full p-2 border rounded text-sm"
-                                                value={currentInvoice.manualName || ''}
-                                                onChange={e => setCurrentInvoice({...currentInvoice, manualName: e.target.value})}
-                                            />
-                                            <input 
-                                                type="text" 
-                                                placeholder="Straße & Hausnummer"
-                                                className="w-full p-2 border rounded text-sm"
-                                                value={currentInvoice.manualStreet || ''}
-                                                onChange={e => setCurrentInvoice({...currentInvoice, manualStreet: e.target.value})}
-                                            />
-                                            <div className="flex gap-2">
-                                                <input 
-                                                    type="text" 
-                                                    placeholder="PLZ"
-                                                    className="w-24 p-2 border rounded text-sm"
-                                                    value={currentInvoice.manualZip || ''}
-                                                    onChange={e => setCurrentInvoice({...currentInvoice, manualZip: e.target.value})}
-                                                />
-                                                <input 
-                                                    type="text" 
-                                                    placeholder="Stadt"
-                                                    className="w-full p-2 border rounded text-sm"
-                                                    value={currentInvoice.manualCity || ''}
-                                                    onChange={e => setCurrentInvoice({...currentInvoice, manualCity: e.target.value})}
-                                                />
-                                                <input 
-                                                    type="text" 
-                                                    placeholder="Land (Leer lassen für Deutschland)"
-                                                    className="w-full p-2 border rounded text-sm"
-                                                    value={currentInvoice.manualCountry || ''}
-                                                    onChange={e => setCurrentInvoice({...currentInvoice, manualCountry: e.target.value})}
-                                                />
-                                            </div>
-                                        </div>
-                                    </div>
-                                );
-                            }
-                            return null;
-                        })()}
-                      </div>
-
-                      {/* --- NEU: KUNDEN-INFOS & BESTELLNUMMER --- */}
                       <div className="grid grid-cols-2 gap-4 mb-4 mt-2">
-                          
-                          {/* 1. Kundennummer (Nur lesen) */}
-                          {profile?.showCustomerNumber && currentInvoice.customerId && (
-                              <div className="bg-slate-50 p-2 rounded border border-slate-200">
-                                  <span className="block text-[10px] text-slate-400 font-bold uppercase">Kundennummer</span>
-                                  <span className="font-mono font-bold text-sm text-slate-700">
-                                      {/* Wir suchen den Kunden im Array, um die Nummer zu finden */}
-                                      {customers.find(c => c.id === currentInvoice.customerId)?.number || 'Keine Nr.'}
-                                  </span>
-                              </div>
-                          )}
-
-                          {/* 2. Bestellnummer (Eingabe) */}
-                          {profile?.showOrderNumber && (
-                              <div className={profile?.showCustomerNumber ? '' : 'col-span-2'}> {/* Nimmt volle Breite, wenn Kundennr aus ist */}
-                                <label className="block text-[10px] text-slate-400 font-bold uppercase mb-1">
-                                    Bestellnummer {profile?.requireOrderNumber && <span className="text-red-500">*</span>}
-                                </label>
-                                <input 
-                                    type="text"
-                                    className={`w-full p-1.5 border rounded font-medium text-sm ${
-                                        profile?.requireOrderNumber && !currentInvoice.orderNumber ? 'border-red-300 bg-red-50' : 'bg-white'
-                                    }`}
-                                    placeholder="z.B. PO-12345"
-                                    value={currentInvoice.orderNumber || ''}
-                                    onChange={e => setCurrentInvoice({...currentInvoice, orderNumber: e.target.value})}
-                                />
-                              </div>
-                          )}
+                          {profile?.showCustomerNumber && currentInvoice.customerId && (<div className="bg-slate-50 p-2 rounded border border-slate-200"><span className="block text-[10px] text-slate-400 font-bold uppercase">Kundennummer</span><span className="font-mono font-bold text-sm text-slate-700">{customers.find(c => c.id === currentInvoice.customerId)?.number || 'Keine Nr.'}</span></div>)}
+                          {profile?.showOrderNumber && (<div className={profile?.showCustomerNumber ? '' : 'col-span-2'}><label className="block text-[10px] text-slate-400 font-bold uppercase mb-1">Bestellnummer {profile?.requireOrderNumber && <span className="text-red-500">*</span>}</label><input type="text" className={`w-full p-1.5 border rounded font-medium text-sm ${profile?.requireOrderNumber && !currentInvoice.orderNumber ? 'border-red-300 bg-red-50' : 'bg-white'}`} placeholder="z.B. PO-12345" value={currentInvoice.orderNumber || ''} onChange={e => setCurrentInvoice({...currentInvoice, orderNumber: e.target.value})} /></div>)}
                       </div>
-
-                      {/* INTELLIGENTE STEUER-ZONE */}
                       <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
-                         
-                         {/* 1. Die Zone wählen */}
-                         <div>
-                             <label className="text-xs font-bold text-slate-500 block mb-1">Steuer-Szenario</label>
-                             <select 
-                                className="w-full p-2 border rounded bg-white font-medium" 
-                                value={currentInvoice.countryZone}
-                                onChange={e => {
-                                    setCurrentInvoice({
-                                        ...currentInvoice, 
-                                        countryZone: e.target.value,
-                                        ossCountryCode: '' 
-                                    });
-                                }}
-                             >
-                                <option value="DE">Deutschland (Inland 19%/7%)</option>
-                                <option value="EU_REV">EU Ausland B2B (Reverse Charge)</option>
-                                <option value="EU_TRI">EU Dreieck B2B (Reverse Charge)</option> {/* <--- NEU */}
-                                <option value="EU_OSS">EU Ausland B2C (OSS / Fernverkauf)</option>
-                                <option value="NON_EU">Drittland / Export (Steuerfrei)</option>
-                             </select>
-                         </div>
-
-                         {/* 2. Nur sichtbar bei OSS: Das Zielland wählen */}
-                         {currentInvoice.countryZone === 'EU_OSS' && (
-                             <div className="animate-in fade-in slide-in-from-left-4">
-                                 <label className="text-xs font-bold text-blue-600 block mb-1 flex items-center gap-1">
-                                    <Globe className="w-3 h-3"/> Bestimmungsland (OSS)
-                                 </label>
-                                 <select 
-                                    className="w-full p-2 border border-blue-300 bg-blue-50 rounded font-bold text-blue-800"
-                                    value={currentInvoice.ossCountryCode}
-                                    onChange={e => setCurrentInvoice({...currentInvoice, ossCountryCode: e.target.value})}
-                                 >
-                                    <option value="">-- Land wählen --</option>
-                                    {vatRates.map(rate => (
-                                        <option key={rate.code} value={rate.code}>
-                                            {rate.country} ({rate.standard}%)
-                                        </option>
-                                    ))}
-                                 </select>
-                             </div>
-                         )}
+                         <div><label className="text-xs font-bold text-slate-500 block mb-1">Steuer-Szenario</label><select className="w-full p-2 border rounded bg-white font-medium" value={currentInvoice.countryZone} onChange={e => { setCurrentInvoice({ ...currentInvoice, countryZone: e.target.value, ossCountryCode: '' }); }}><option value="DE">Deutschland (Inland 19%/7%)</option><option value="EU_REV">EU Ausland B2B (Reverse Charge)</option><option value="EU_TRI">EU Dreieck B2B (Reverse Charge)</option><option value="EU_OSS">EU Ausland B2C (OSS / Fernverkauf)</option><option value="NON_EU">Drittland / Export (Steuerfrei)</option></select></div>
+                         {currentInvoice.countryZone === 'EU_OSS' && (<div className="animate-in fade-in"><label className="text-xs font-bold text-blue-600 block mb-1">Bestimmungsland</label><select className="w-full p-2 border border-blue-300 bg-blue-50 rounded font-bold text-blue-800" value={currentInvoice.ossCountryCode} onChange={e => setCurrentInvoice({...currentInvoice, ossCountryCode: e.target.value})}>{vatRates.map(rate => (<option key={rate.code} value={rate.code}>{rate.country} ({rate.standard}%)</option>))}</select></div>)}
                       </div>
                    </div>
-
-                   {/* --- WIEDER DA: RECHNUNGSDATUM --- */}
+                   <div className="mb-4"><label className="text-xs font-bold text-slate-500 block mb-1">Rechnungsdatum</label><input type="date" className="w-full p-2 border rounded bg-white font-medium text-sm" value={currentInvoice.date} onChange={e => setCurrentInvoice({...currentInvoice, date: e.target.value})} /></div>
                    <div className="mb-4">
-                       <label className="text-xs font-bold text-slate-500 block mb-1">Rechnungsdatum</label>
-                       <input 
-                         type="date" 
-                         required
-                         className="w-full p-2 border rounded bg-white font-medium text-sm"
-                         value={currentInvoice.date} 
-                         onChange={e => setCurrentInvoice({...currentInvoice, date: e.target.value})}
-                       />
-                   </div>
-
-                   {/* --- LEISTUNGSDATUM / ZEITRAUM --- */}
-                    <div className="mb-4">
                         <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Leistungszeitpunkt</label>
-                        
-                        {/* Auswahl: Zeitpunkt vs Zeitraum */}
                         <div className="flex gap-4 mb-2 text-sm">
-                            <label className="flex items-center gap-2 cursor-pointer">
-                                <input 
-                                    type="radio" 
-                                    name="serviceDateMode"
-                                    checked={currentInvoice.serviceDateMode !== 'period'}
-                                    onChange={() => setCurrentInvoice({...currentInvoice, serviceDateMode: 'point'})}
-                                />
-                                <span>Einmalig (Datum)</span>
-                            </label>
-                            <label className="flex items-center gap-2 cursor-pointer">
-                                <input 
-                                    type="radio" 
-                                    name="serviceDateMode"
-                                    checked={currentInvoice.serviceDateMode === 'period'}
-                                    onChange={() => setCurrentInvoice({...currentInvoice, serviceDateMode: 'period'})}
-                                />
-                                <span>Zeitraum (Von - Bis)</span>
-                            </label>
+                            <label className="flex items-center gap-2 cursor-pointer"><input type="radio" checked={currentInvoice.serviceDateMode !== 'period'} onChange={() => setCurrentInvoice({...currentInvoice, serviceDateMode: 'point'})}/><span>Einmalig (Datum)</span></label>
+                            <label className="flex items-center gap-2 cursor-pointer"><input type="radio" checked={currentInvoice.serviceDateMode === 'period'} onChange={() => setCurrentInvoice({...currentInvoice, serviceDateMode: 'period'})}/><span>Zeitraum (Von - Bis)</span></label>
                         </div>
-
-                        {/* Eingabefelder */}
                         {currentInvoice.serviceDateMode === 'period' ? (
-                            <div className="grid grid-cols-2 gap-2">
-                                <input 
-                                    type="date" 
-                                    className="w-full p-2 border rounded text-sm"
-                                    // WICHTIG: Korrekter Variablenname für CSV (serviceDateStart)
-                                    value={currentInvoice.serviceDateStart || ''}
-                                    onChange={e => setCurrentInvoice({...currentInvoice, serviceDateStart: e.target.value})}
-                                />
-                                <input 
-                                    type="date" 
-                                    className="w-full p-2 border rounded text-sm"
-                                    value={currentInvoice.serviceDateEnd || ''}
-                                    onChange={e => setCurrentInvoice({...currentInvoice, serviceDateEnd: e.target.value})}
-                                />
-                            </div>
+                            <div className="grid grid-cols-2 gap-2"><input type="date" className="w-full p-2 border rounded text-sm" value={currentInvoice.serviceDateStart || ''} onChange={e => setCurrentInvoice({...currentInvoice, serviceDateStart: e.target.value})} /><input type="date" className="w-full p-2 border rounded text-sm" value={currentInvoice.serviceDateEnd || ''} onChange={e => setCurrentInvoice({...currentInvoice, serviceDateEnd: e.target.value})} /></div>
                         ) : (
-                            <input 
-                                type="date" 
-                                className="w-full p-2 border rounded text-sm"
-                                // Default: Falls leer, nutze Rechnungsdatum oder Heute
-                                value={currentInvoice.serviceDate || currentInvoice.date || new Date().toISOString().slice(0, 10)}
-                                onChange={e => setCurrentInvoice({...currentInvoice, serviceDate: e.target.value})}
-                            />
+                            <input type="date" className="w-full p-2 border rounded text-sm" value={currentInvoice.serviceDate || currentInvoice.date || new Date().toISOString().slice(0, 10)} onChange={e => setCurrentInvoice({...currentInvoice, serviceDate: e.target.value})} />
                         )}
-                    </div>
-
-                    {/* --- A: ZAHLUNGSBEDINGUNGEN --- */}
-                    <div className="mb-4">
-                        <label className="text-xs font-bold text-slate-500 block mb-1">Zahlungsbedingungen</label>
-                        <select 
-                          className="w-full p-2 border rounded bg-white font-medium text-sm"
-                          value={currentInvoice.paymentTerms || '14_days'}
-                          onChange={e => setCurrentInvoice({...currentInvoice, paymentTerms: e.target.value})}
-                        >
-                          <option value="paid">Bereits bezahlt</option>
-                          <option value="14_days">Zahlbar innerhalb von 14 Tagen ohne Abzug</option>
-                          <option value="7_days">Zahlbar innerhalb von 7 Tagen ohne Abzug</option>
-                          <option value="0_days">Zahlbar sofort ohne Abzug</option>
-                          <option value="sepa_7">Abbuchung (Lastschrift) innerhalb von 7 Tagen</option>
-                        </select>
-                    </div>
+                   </div>
+                   <div className="mb-4"><label className="text-xs font-bold text-slate-500 block mb-1">Zahlungsbedingungen</label><select className="w-full p-2 border rounded bg-white font-medium text-sm" value={currentInvoice.paymentTerms || '14_days'} onChange={e => setCurrentInvoice({...currentInvoice, paymentTerms: e.target.value})}><option value="paid">Bereits bezahlt</option><option value="14_days">Zahlbar innerhalb von 14 Tagen</option><option value="7_days">Zahlbar innerhalb von 7 Tagen</option><option value="0_days">Sofort zahlbar</option><option value="sepa_7">Lastschrift (7 Tage)</option></select></div>
                 </div>
 
-                {/* 2. NUMMERN & PROZENT BLOCK (Dein neuer Code) */}
                 <div className="bg-slate-50 p-4 rounded border border-blue-100">
-                  <div className="flex justify-between items-start mb-4">
-                      <label className="text-xs font-bold text-slate-500 flex items-center gap-1 mt-1">
-                        <Hash className="w-3 h-3"/> Rechnungsnummer & Zahlungsplan
-                      </label>
-                      
-                      <label className={`flex items-center gap-2 text-xs font-bold ${currentInvoice.number ? 'text-slate-400 cursor-not-allowed' : 'text-blue-700 cursor-pointer'}`}>
-                        <input 
-                          type="checkbox" 
-                          checked={currentInvoice.isPartial || false} 
-                          disabled={!!currentInvoice.number} 
-                          onChange={e => setCurrentInvoice({...currentInvoice, isPartial: e.target.checked})}
-                          className="accent-blue-600"
-                        />
-                        Teil-/Abschlagszahlung
-                      </label>
-                  </div>
-
+                  <div className="flex justify-between items-start mb-4"><label className="text-xs font-bold text-slate-500 flex items-center gap-1 mt-1"><Hash className="w-3 h-3"/> Rechnungsnummer</label><label className={`flex items-center gap-2 text-xs font-bold ${currentInvoice.number ? 'text-slate-400 cursor-not-allowed' : 'text-blue-700 cursor-pointer'}`}><input type="checkbox" checked={currentInvoice.isPartial || false} disabled={!!currentInvoice.number} onChange={e => setCurrentInvoice({...currentInvoice, isPartial: e.target.checked})} className="accent-blue-600"/> Teil-/Abschlagszahlung</label></div>
                   <div className="flex items-center gap-4">
-                      {/* Nummer */}
-                      <div className="text-lg font-mono font-bold text-slate-700 bg-white border px-3 py-2 rounded shadow-sm inline-block min-w-[180px]">
-                            {currentInvoice.number ? currentInvoice.number : (
-                                currentInvoice.isPartial 
-                                  ? `${profile?.invoicePrefix || 'RE'}-${String(profile?.nextInvoiceNumber || '1000').padStart(4, '0')}-01`
-                                  : `${profile?.invoicePrefix || 'RE'}-${String(profile?.nextInvoiceNumber || '1000').padStart(4, '0')}`
-                            )}
-                      </div>
-
-                      {/* Prozent-Feld */}
-                      {currentInvoice.isPartial && (
-                          <div className="flex items-center gap-2 animate-in fade-in slide-in-from-left-2">
-                              <div className="bg-white border rounded flex items-center shadow-sm overflow-hidden">
-                                  <input 
-                                      type="number" 
-                                      min="1" 
-                                      max="100"
-                                      placeholder="30"
-                                      className="w-16 p-2 text-center font-bold outline-none"
-                                      value={currentInvoice.partialPercentage || ''}
-                                      onChange={e => setCurrentInvoice({...currentInvoice, partialPercentage: parseFloat(e.target.value)})}
-                                  />
-                                  <span className="bg-slate-100 border-l px-3 py-2 text-slate-500 font-bold">%</span>
-                              </div>
-                              <span className="text-xs font-bold text-slate-500">fällig vom<br/>Gesamtbetrag</span>
-                          </div>
-                      )}
+                      <div className="text-lg font-mono font-bold text-slate-700 bg-white border px-3 py-2 rounded shadow-sm inline-block min-w-[180px]">{currentInvoice.number ? currentInvoice.number : (currentInvoice.isPartial ? `${profile?.invoicePrefix || 'RE'}-${String(profile?.nextInvoiceNumber || '1000').padStart(4, '0')}-01` : `${profile?.invoicePrefix || 'RE'}-${String(profile?.nextInvoiceNumber || '1000').padStart(4, '0')}`)}</div>
+                      {currentInvoice.isPartial && (<div className="flex items-center gap-2 animate-in fade-in"><div className="bg-white border rounded flex items-center shadow-sm overflow-hidden"><input type="number" min="1" max="100" placeholder="30" className="w-16 p-2 text-center font-bold outline-none" value={currentInvoice.partialPercentage || ''} onChange={e => setCurrentInvoice({...currentInvoice, partialPercentage: parseFloat(e.target.value)})} /><span className="bg-slate-100 border-l px-3 py-2 text-slate-500 font-bold">%</span></div><span className="text-xs font-bold text-slate-500">fällig</span></div>)}
                   </div>
-                   
-                   {currentInvoice.number && (
-                      <p className="text-[10px] text-slate-400 mt-2 flex items-center gap-1">
-                          <ArrowUpRight className="w-3 h-3"/> Dies ist eine Folgerechnung. Nummer fixiert.
-                      </p>
-                  )}
                 </div>
 
-                {/* 3. ARTIKEL LISTE */}
                 <div className="bg-white p-6 rounded-xl shadow-sm border">
                    <h3 className="font-bold text-slate-700 mb-4">Rechnungsposten</h3>
-                   
-                   {/* Artikel Schnellwahl */}
-                   <div className="mb-6 flex gap-2">
-                      <select 
-                        className="flex-1 p-2 border rounded bg-slate-50 text-sm"
-                        onChange={(e) => {
-                           const item = items.find(i => i.id === e.target.value);
-                           if(item) {
-                             setCurrentInvoice({
-                               ...currentInvoice,
-                               items: [...currentInvoice.items, { ...item, id: Date.now(), itemId: item.id, quantity: 1, taxRate: 19 }]
-                             });
-                           }
-                           e.target.value = "";
-                        }}
-                      >
-                         <option value="">-- Artikel aus Katalog hinzufügen --</option>
-                         {items.map(i => <option key={i.id} value={i.id}>{i.number} - {i.description} ({i.price}€)</option>)}
-                      </select>
-                   </div>
-
-                   {/* Tabelle */}
+                   <div className="mb-6 flex gap-2"><select className="flex-1 p-2 border rounded bg-slate-50 text-sm" onChange={(e) => { const item = items.find(i => i.id === e.target.value); if(item) { setCurrentInvoice({ ...currentInvoice, items: [...currentInvoice.items, { ...item, id: Date.now(), itemId: item.id, quantity: 1, taxRate: 19 }] }); } e.target.value = ""; }}><option value="">-- Artikel aus Katalog hinzufügen --</option>{items.map(i => <option key={i.id} value={i.id}>{i.number} - {i.description} ({i.price}€)</option>)}</select></div>
                    <div className="space-y-4">
                       {currentInvoice.items.map((item, index) => (
                          <div key={item.id} className="flex gap-2 items-start group">
                             <div className="flex-1 grid grid-cols-12 gap-2">
-                               <div className="col-span-6">
-                                  <input 
-                                    className="w-full p-2 border rounded text-sm font-medium" 
-                                    placeholder="Beschreibung" 
-                                    value={item.description} 
-                                    onChange={e => {
-                                       const newItems = [...currentInvoice.items];
-                                       newItems[index].description = e.target.value;
-                                       setCurrentInvoice({...currentInvoice, items: newItems});
-                                    }}
-                                  />
-                               </div>
-                               <div className="col-span-2">
-                                  <input 
-                                    type="number" 
-                                    className="w-full p-2 border rounded text-sm text-center" 
-                                    placeholder="Menge" 
-                                    value={item.quantity} 
-                                    onChange={e => {
-                                       const newItems = [...currentInvoice.items];
-                                       newItems[index].quantity = parseFloat(e.target.value);
-                                       setCurrentInvoice({...currentInvoice, items: newItems});
-                                    }}
-                                  />
-                               </div>
-                               <div className="col-span-2">
-                                  <input 
-                                    type="number" 
-                                    className="w-full p-2 border rounded text-sm text-right" 
-                                    placeholder="Preis" 
-                                    value={item.price} 
-                                    onChange={e => {
-                                       const newItems = [...currentInvoice.items];
-                                       newItems[index].price = parseFloat(e.target.value);
-                                       setCurrentInvoice({...currentInvoice, items: newItems});
-                                    }}
-                                  />
-                               </div>
-                               <div className="col-span-2">
-                                  <select 
-                                    className="w-full p-2 border rounded text-sm bg-white"
-                                    value={item.taxRate}
-                                    onChange={e => {
-                                       const newItems = [...currentInvoice.items];
-                                       newItems[index].taxRate = parseFloat(e.target.value);
-                                       setCurrentInvoice({...currentInvoice, items: newItems});
-                                    }}
-                                  >
-                                    {/* Die Werte bleiben 19/7/0 als "Marker", aber der Text ist jetzt generisch */}
-                                    <option value="19">Normaler Satz</option>
-                                    <option value="7">Ermäßigt 1</option>
-                                    <option value="0">Ermäßigt 2 / Steuerfrei</option>
-                                  </select>
-                               </div>
+                               <div className="col-span-6"><input className="w-full p-2 border rounded text-sm font-medium" placeholder="Beschreibung" value={item.description} onChange={e => { const newItems = [...currentInvoice.items]; newItems[index].description = e.target.value; setCurrentInvoice({...currentInvoice, items: newItems}); }} /></div>
+                               <div className="col-span-2"><input type="number" className="w-full p-2 border rounded text-sm text-center" placeholder="Menge" value={item.quantity} onChange={e => { const newItems = [...currentInvoice.items]; newItems[index].quantity = parseFloat(e.target.value); setCurrentInvoice({...currentInvoice, items: newItems}); }} /></div>
+                               <div className="col-span-2"><input type="number" className="w-full p-2 border rounded text-sm text-right" placeholder="Preis" value={item.price} onChange={e => { const newItems = [...currentInvoice.items]; newItems[index].price = parseFloat(e.target.value); setCurrentInvoice({...currentInvoice, items: newItems}); }} /></div>
+                               <div className="col-span-2"><select className="w-full p-2 border rounded text-sm bg-white" value={item.taxRate} onChange={e => { const newItems = [...currentInvoice.items]; newItems[index].taxRate = parseFloat(e.target.value); setCurrentInvoice({...currentInvoice, items: newItems}); }}><option value="19">19%</option><option value="7">7%</option><option value="0">0%</option></select></div>
                             </div>
-                            <button 
-                              onClick={() => {
-                                const newItems = currentInvoice.items.filter((_, i) => i !== index);
-                                setCurrentInvoice({...currentInvoice, items: newItems});
-                              }}
-                              className="p-2 text-red-300 hover:text-red-500 hover:bg-red-50 rounded"
-                            >
-                               <Trash2 className="w-4 h-4"/>
-                            </button>
+                            <button onClick={() => { const newItems = currentInvoice.items.filter((_, i) => i !== index); setCurrentInvoice({...currentInvoice, items: newItems}); }} className="p-2 text-red-300 hover:text-red-500 hover:bg-red-50 rounded"><Trash2 className="w-4 h-4"/></button>
                          </div>
                       ))}
                    </div>
-                   
-                   <button 
-                     onClick={() => setCurrentInvoice({...currentInvoice, items: [...currentInvoice.items, { id: Date.now(), description: '', quantity: 1, price: 0, taxRate: 19 }]})}
-                     className="mt-4 w-full py-2 border-2 border-dashed border-slate-200 text-slate-400 rounded-lg text-sm font-bold hover:border-blue-300 hover:text-blue-500 transition"
-                   >
-                     + Weiteren Posten hinzufügen
-                   </button>
+                   <button onClick={() => setCurrentInvoice({...currentInvoice, items: [...currentInvoice.items, { id: Date.now(), description: '', quantity: 1, price: 0, taxRate: 19 }]})} className="mt-4 w-full py-2 border-2 border-dashed border-slate-200 text-slate-400 rounded-lg text-sm font-bold hover:border-blue-300 hover:text-blue-500 transition">+ Weiteren Posten hinzufügen</button>
                 </div>
 
-                {/* 4. FUßTEXT */}
-                <div className="bg-white p-6 rounded-xl shadow-sm border">
-                   <h3 className="font-bold text-xs text-slate-400 uppercase mb-2">Fußtext / Anmerkungen</h3>
-                   <textarea 
-                     className="w-full p-3 border rounded-lg text-sm h-24" 
-                     value={currentInvoice.notes} 
-                     onChange={e => setCurrentInvoice({...currentInvoice, notes: e.target.value})}
-                   />
-                </div>
+                <div className="bg-white p-6 rounded-xl shadow-sm border"><h3 className="font-bold text-xs text-slate-400 uppercase mb-2">Fußtext</h3><textarea className="w-full p-3 border rounded-lg text-sm h-24" value={currentInvoice.notes} onChange={e => setCurrentInvoice({...currentInvoice, notes: e.target.value})} /></div>
 
-                {/* BUTTONS */}
                 <div className="flex gap-4 pt-4">
-                   <button 
-                     onClick={saveInvoice} 
-                     disabled={loading}
-                     className="flex-1 bg-blue-600 text-white py-4 rounded-xl font-bold text-lg shadow-lg hover:bg-blue-700 transition flex items-center justify-center gap-2"
-                   >
-                     {loading ? 'Speichert...' : <><Save className="w-5 h-5"/> Buchen & Archivieren</>}
-                   </button>
-                   <button 
-                     onClick={() => {
-                        // 1. Bestimmen: Rechnung oder Korrektur?
-                        const typeText = currentInvoice.type === 'credit_note' ? 'Rechnungskorrektur' : 'Rechnung';
-                        
-                        // 2. Nummer holen:
-                        // Entweder die echte gespeicherte Nummer...
-                        let fileNum = currentInvoice.number;
-                        
-                        // ...oder falls leer (Entwurf), berechnen wir die Vorschau-Nummer (wie im PDF)
-                        if (!fileNum) {
-                             const prefix = profile?.invoicePrefix || 'RE';
-                             const nextNum = String(profile?.nextInvoiceNumber || '1000').padStart(4, '0');
-                             fileNum = `${prefix}-${nextNum}`;
-                             
-                             // Optional: Falls Teilrechnung, hängen wir das Suffix an (falls du das nutzt)
-                             if (currentInvoice.isPartial) {
-                                 fileNum += '-01'; 
-                             }
-                        }
-                        
-                        // 3. PDF generieren mit korrektem Namen (z.B. "Rechnung_RE-1005.pdf")
-                        generatePDF('invoice-preview-hidden', `${typeText}_${fileNum}.pdf`);
-                     }} 
-                     className="px-6 bg-orange-600 text-white rounded-xl font-bold shadow-lg hover:bg-orange-700 flex items-center gap-2"
-                   >
-                     <Printer className="w-5 h-5"/> Drucken / PDF
-                   </button>
+                   <button onClick={saveInvoice} disabled={loading} className="flex-1 bg-blue-600 text-white py-4 rounded-xl font-bold text-lg shadow-lg hover:bg-blue-700 transition flex items-center justify-center gap-2">{loading ? 'Speichert...' : <><Save className="w-5 h-5"/> Buchen & Archivieren</>}</button>
+                   <button onClick={() => { const typeText = currentInvoice.type === 'credit_note' ? 'Rechnungskorrektur' : 'Rechnung'; let fileNum = currentInvoice.number; if (!fileNum) { const prefix = profile?.invoicePrefix || 'RE'; const nextNum = String(profile?.nextInvoiceNumber || '1000').padStart(4, '0'); fileNum = `${prefix}-${nextNum}`; if (currentInvoice.isPartial) fileNum += '-01'; } generatePDF('invoice-preview-hidden', `${typeText}_${fileNum}.pdf`); }} className="px-6 bg-orange-600 text-white rounded-xl font-bold shadow-lg hover:bg-orange-700 flex items-center gap-2"><Printer className="w-5 h-5"/> Drucken</button>
                 </div>
-
              </div>
 
-             {/* RECHTE SPALTE: LIVE VORSCHAU (MIT DYNAMISCHER BREITE) */}
-             {/* 1. Wir geben dem Container die 'ref', damit wir seine Breite messen können */}
-             <div 
-                ref={previewContainerRef}
-                className="bg-slate-50 border-l border-slate-200 p-4 lg:p-8 overflow-y-auto custom-scrollbar h-[calc(100vh-4rem)] lg:sticky lg:top-0 flex flex-col items-center"
-             >
-                
-                <h3 className="font-bold text-slate-400 uppercase tracking-wider text-xs mb-4 w-full flex justify-between items-center">
-                    <span>Vorschau</span>
-                    <span className="text-[10px] bg-slate-200 px-2 py-1 rounded text-slate-500">A4 Format</span>
-                </h3>
-
-                {/* 2. ZOOM-CONTAINER
-                   Hier haben wir die festen Klassen (scale-[...]) ENTFERNT.
-                   Stattdessen nutzen wir style={{ transform: ... }} mit unserem berechneten Wert.
-                */}
-                <div 
-                    className="origin-top transition-transform duration-100 mb-10"
-                    style={{ transform: `scale(${previewScale})` }}
-                >
-                    <div 
-                        className="bg-white shadow-2xl min-h-[297mm] text-slate-800 relative" 
-                        style={{ width: '210mm' }}
-                        id="invoice-preview"
-                    >
-                         {/* --- LIVE VORSCHAU INHALT (Unverändert) --- */}
+             {/* VORSCHAU SPALTE (RECHTS) */}
+             <div ref={previewContainerRef} className="bg-slate-50 border-l border-slate-200 p-4 lg:p-8 overflow-y-auto custom-scrollbar h-[calc(100vh-4rem)] lg:sticky lg:top-0 flex flex-col items-center">
+                <h3 className="font-bold text-slate-400 uppercase tracking-wider text-xs mb-4 w-full flex justify-between items-center"><span>Vorschau</span><span className="text-[10px] bg-slate-200 px-2 py-1 rounded text-slate-500">A4 Format</span></h3>
+                <div className="origin-top transition-transform duration-100 mb-10" style={{ transform: `scale(${previewScale})` }}>
+                    <div className="bg-white shadow-2xl min-h-[297mm] text-slate-800 relative" style={{ width: '210mm' }} id="invoice-preview">
                          {(() => {
                                 let previewNumber = '';
                                 if (currentInvoice.number) {
@@ -2513,219 +1912,58 @@ function ErpSystem() {
                                 } else {
                                     const prefix = profile?.invoicePrefix || 'RE';
                                     const nextNum = String(profile?.nextInvoiceNumber || '1000').padStart(4, '0');
-                                    if (currentInvoice.isPartial) {
-                                        previewNumber = `${prefix}-${nextNum}-01`;
-                                    } else {
-                                        previewNumber = `${prefix}-${nextNum}`;
-                                    }
+                                    previewNumber = currentInvoice.isPartial ? `${prefix}-${nextNum}-01` : `${prefix}-${nextNum}`;
                                 }
-
-                                return (
-                                    <InvoicePaper 
-                                        data={{
-                                            ...currentInvoice, 
-                                            number: previewNumber, 
-                                            totals: totals,
-                                            customerSnap: customers.find(c => c.id === currentInvoice.customerId),
-                                            isPartial: currentInvoice.isPartial,
-                                            partialPercentage: currentInvoice.partialPercentage
-                                        }} 
-                                        idPrefix="invoice-preview-live" 
-                                    />
-                                );
+                                return (<InvoicePaper data={{ ...currentInvoice, number: previewNumber, totals: totals, customerSnap: customers.find(c => c.id === currentInvoice.customerId), isPartial: currentInvoice.isPartial, partialPercentage: currentInvoice.partialPercentage }} idPrefix="invoice-preview-live" />);
                             })()}
                     </div>
                 </div>
-
              </div>
           </div>
         )}
 
-        {/* --- INVOICE HISTORY (MIT FILTER & SORTIERUNG) --- */}
+        {/* INVOICE HISTORY */}
         {activeTab === 'invoice-history' && (
           <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-             
-             {/* 1. HEADER & FILTER */}
              <div className="p-6 border-b border-slate-100 space-y-4">
                 <div className="flex justify-between items-center">
-                    <div>
-                        <h2 className="text-xl font-bold flex items-center gap-2">
-                            <History className="w-5 h-5 text-slate-500"/> Rechnungsarchiv
-                        </h2>
-                        <div className="text-xs text-slate-500 mt-1">
-                            {processedInvoices.length} Rechnungen gefunden
-                        </div>
-                    </div>
-                    {selectedInvoices.length > 0 && (
-                        <div className="flex gap-2 items-center bg-blue-50 p-2 rounded-lg border border-blue-100 animate-in fade-in">
-                            <span className="text-sm font-bold text-blue-800 px-2">{selectedInvoices.length} ausgewählt</span>
-                            <button onClick={downloadInvoicesCSV} className="text-blue-700 hover:bg-blue-100 px-3 py-1 rounded text-xs flex items-center gap-1"><FileText className="w-3 h-3"/> CSV Export</button>
-                        </div>
-                    )}
+                    <div><h2 className="text-xl font-bold flex items-center gap-2"><History className="w-5 h-5 text-slate-500"/> Rechnungsarchiv</h2><div className="text-xs text-slate-500 mt-1">{processedInvoices.length} Rechnungen gefunden</div></div>
+                    {selectedInvoices.length > 0 && (<div className="flex gap-2 items-center bg-blue-50 p-2 rounded-lg border border-blue-100 animate-in fade-in"><span className="text-sm font-bold text-blue-800 px-2">{selectedInvoices.length} ausgewählt</span><button onClick={downloadInvoicesCSV} className="text-blue-700 hover:bg-blue-100 px-3 py-1 rounded text-xs flex items-center gap-1"><FileText className="w-3 h-3"/> CSV Export</button></div>)}
                 </div>
-
-                {/* FILTER FELDER */}
                 <div className="flex gap-4 items-end bg-slate-50 p-4 rounded-lg border border-slate-100">
-                    <div className="flex-1">
-                        <label className="text-[10px] uppercase font-bold text-slate-500 mb-1 block">Nach Kunde filtern</label>
-                        <div className="relative">
-                            <User className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
-                            <input 
-                                type="text" 
-                                placeholder="Kundenname..." 
-                                className="w-full pl-9 pr-4 py-2 border rounded text-sm focus:outline-none focus:border-blue-500"
-                                value={filterCustomer}
-                                onChange={e => setFilterCustomer(e.target.value)}
-                            />
-                        </div>
-                    </div>
-                    {/* NEU: ZEITRAUM FILTER */}
-                    <div className="flex gap-2 items-end">
-                        <div className="w-32">
-                            <label className="text-[10px] uppercase font-bold text-slate-500 mb-1 block">Von</label>
-                            <input 
-                                type="date" 
-                                className="w-full px-2 py-2 border rounded text-sm focus:outline-none focus:border-blue-500"
-                                value={filterDateStart}
-                                onChange={e => setFilterDateStart(e.target.value)}
-                            />
-                        </div>
-                        <div className="w-32">
-                            <label className="text-[10px] uppercase font-bold text-slate-500 mb-1 block">Bis</label>
-                            <input 
-                                type="date" 
-                                className="w-full px-2 py-2 border rounded text-sm focus:outline-none focus:border-blue-500"
-                                value={filterDateEnd}
-                                onChange={e => setFilterDateEnd(e.target.value)}
-                            />
-                        </div>
-                    </div>
-                    {/* RESET BUTTON (KORRIGIERT) */}
-                    {(filterCustomer || filterDateStart || filterDateEnd) && (
-                        <button 
-                            onClick={() => { 
-                                setFilterCustomer(''); 
-                                setFilterDateStart(''); 
-                                setFilterDateEnd(''); 
-                            }}
-                            className="px-3 py-2 text-red-500 hover:bg-red-50 rounded text-sm font-bold flex items-center gap-1 h-[38px]"
-                        >
-                            <X className="w-4 h-4" /> Reset
-                        </button>
-                    )}
+                    <div className="flex-1"><label className="text-[10px] uppercase font-bold text-slate-500 mb-1 block">Nach Kunde filtern</label><div className="relative"><User className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" /><input type="text" placeholder="Kundenname..." className="w-full pl-9 pr-4 py-2 border rounded text-sm outline-none" value={filterCustomer} onChange={e => setFilterCustomer(e.target.value)} /></div></div>
+                    <div className="flex gap-2 items-end"><div className="w-32"><label className="text-[10px] uppercase font-bold text-slate-500 mb-1 block">Von</label><input type="date" className="w-full px-2 py-2 border rounded text-sm" value={filterDateStart} onChange={e => setFilterDateStart(e.target.value)} /></div><div className="w-32"><label className="text-[10px] uppercase font-bold text-slate-500 mb-1 block">Bis</label><input type="date" className="w-full px-2 py-2 border rounded text-sm" value={filterDateEnd} onChange={e => setFilterDateEnd(e.target.value)} /></div></div>
+                    {(filterCustomer || filterDateStart || filterDateEnd) && (<button onClick={() => { setFilterCustomer(''); setFilterDateStart(''); setFilterDateEnd(''); }} className="px-3 py-2 text-red-500 hover:bg-red-50 rounded text-sm font-bold flex items-center gap-1 h-[38px]"><X className="w-4 h-4" /> Reset</button>)}
                 </div>
              </div>
-
-             {/* 2. TABELLE (KLICKBAR) */}
              <table className="w-full text-left">
                 <thead className="bg-slate-50 text-slate-500 text-[10px] uppercase font-bold cursor-pointer select-none border-b">
-                    <tr>
-                        <th className="p-4 w-10 cursor-default">
-                            <button onClick={() => setSelectedInvoices(selectedInvoices.length === processedInvoices.length ? [] : processedInvoices.map(i => i.id))}>
-                                {selectedInvoices.length === processedInvoices.length && processedInvoices.length > 0 ? <CheckSquare className="w-4 h-4 text-blue-600"/> : <Square className="w-4 h-4"/>}
-                            </button>
-                        </th>
-                        
-                        <th className="p-4 hover:text-blue-600 group" onClick={() => requestSort('number')}>
-                            <div className="flex items-center gap-1">Nr. {sortConfig.key === 'number' && (sortConfig.direction === 'asc' ? <ArrowUpRight className="w-3 h-3"/> : <ArrowDownLeft className="w-3 h-3"/>)}</div>
-                        </th>
-                        
-                        <th className="p-4 hover:text-blue-600 group" onClick={() => requestSort('date')}>
-                            <div className="flex items-center gap-1">Datum {sortConfig.key === 'date' && (sortConfig.direction === 'asc' ? <ArrowUpRight className="w-3 h-3"/> : <ArrowDownLeft className="w-3 h-3"/>)}</div>
-                        </th>
-
-                        <th className="p-4 hover:text-blue-600 group" onClick={() => requestSort('customer')}>
-                            <div className="flex items-center gap-1">Kunde {sortConfig.key === 'customer' && (sortConfig.direction === 'asc' ? <ArrowUpRight className="w-3 h-3"/> : <ArrowDownLeft className="w-3 h-3"/>)}</div>
-                        </th>
-
-                        <th className="p-4 text-right hover:text-blue-600 group" onClick={() => requestSort('netto')}>
-                            <div className="flex items-center justify-end gap-1">Netto {sortConfig.key === 'netto' && (sortConfig.direction === 'asc' ? <ArrowUpRight className="w-3 h-3"/> : <ArrowDownLeft className="w-3 h-3"/>)}</div>
-                        </th>
-
-                        <th className="p-4 text-right hover:text-blue-600 group" onClick={() => requestSort('tax')}>
-                            <div className="flex items-center justify-end gap-1">MwSt. {sortConfig.key === 'tax' && (sortConfig.direction === 'asc' ? <ArrowUpRight className="w-3 h-3"/> : <ArrowDownLeft className="w-3 h-3"/>)}</div>
-                        </th>
-
-                        <th className="p-4 text-right hover:text-blue-600 group" onClick={() => requestSort('brutto')}>
-                            <div className="flex items-center justify-end gap-1">Brutto {sortConfig.key === 'brutto' && (sortConfig.direction === 'asc' ? <ArrowUpRight className="w-3 h-3"/> : <ArrowDownLeft className="w-3 h-3"/>)}</div>
-                        </th>
-                        
-                        <th className="p-4 text-center hover:text-blue-600 group" onClick={() => requestSort('partial')}>
-                            <div className="flex items-center justify-center gap-1">Abschlag {sortConfig.key === 'partial' && (sortConfig.direction === 'asc' ? <ArrowUpRight className="w-3 h-3"/> : <ArrowDownLeft className="w-3 h-3"/>)}</div>
-                        </th>
-
-                        <th className="p-4 text-right cursor-default">Aktion</th>
-                    </tr>
+                    <tr><th className="p-4 w-10 cursor-default"><button onClick={() => setSelectedInvoices(selectedInvoices.length === processedInvoices.length ? [] : processedInvoices.map(i => i.id))}>{selectedInvoices.length === processedInvoices.length && processedInvoices.length > 0 ? <CheckSquare className="w-4 h-4 text-blue-600"/> : <Square className="w-4 h-4"/>}</button></th><th className="p-4 hover:text-blue-600 group" onClick={() => requestSort('number')}>Nr.</th><th className="p-4 hover:text-blue-600 group" onClick={() => requestSort('date')}>Datum</th><th className="p-4 hover:text-blue-600 group" onClick={() => requestSort('customer')}>Kunde</th><th className="p-4 text-right hover:text-blue-600 group" onClick={() => requestSort('netto')}>Netto</th><th className="p-4 text-right hover:text-blue-600 group" onClick={() => requestSort('brutto')}>Brutto</th><th className="p-4 text-right cursor-default">Aktion</th></tr>
                 </thead>
                 <tbody className="divide-y">
                     {processedInvoices.map(inv => (
                         <tr key={inv.id} className="hover:bg-slate-50 transition-colors">
-                            <td className="p-4">
-                                <button onClick={() => setSelectedInvoices(prev => prev.includes(inv.id) ? prev.filter(id => id !== inv.id) : [...prev, inv.id])}>
-                                    {selectedInvoices.includes(inv.id) ? <CheckSquare className="w-4 h-4 text-blue-600"/> : <Square className="w-4 h-4 text-slate-300"/>}
-                                </button>
-                            </td>
-
-                            <td className="p-4 font-bold text-slate-700 whitespace-nowrap">
-                                {inv.number}
-                                {inv.type === 'credit_note' && <span className="ml-2 text-[9px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded uppercase">GS</span>}
-                            </td>
-                            
-                            <td className="p-4 text-sm text-slate-600 whitespace-nowrap">
-                                {new Date(inv.date).toLocaleDateString('de-DE')}
-                            </td>
-
-                            <td className="p-4 text-sm font-medium text-slate-800">
-                                {getDisplayName(inv.customerSnap)}
-                            </td>
-
-                            <td className="p-4 text-right text-slate-500 text-sm whitespace-nowrap">
-                                {inv.totals.netto.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}
-                            </td>
-
-                            <td className="p-4 text-right text-slate-400 text-xs whitespace-nowrap">
-                                {inv.totals.taxTotal.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}
-                            </td>
-
-                            <td className={`p-4 text-right font-bold text-sm whitespace-nowrap ${inv.totals.brutto < 0 ? 'text-red-600' : 'text-blue-600'}`}>
-                                {inv.totals.brutto.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}
-                            </td>
-
-                            <td className="p-4 text-center">
-                                {inv.isPartial && inv.partialPercentage ? (
-                                    <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded-full text-xs font-bold">
-                                        {inv.partialPercentage}%
-                                    </span>
-                                ) : (
-                                    <span className="text-slate-300">-</span>
-                                )}
-                            </td>
-
+                            <td className="p-4"><button onClick={() => setSelectedInvoices(prev => prev.includes(inv.id) ? prev.filter(id => id !== inv.id) : [...prev, inv.id])}>{selectedInvoices.includes(inv.id) ? <CheckSquare className="w-4 h-4 text-blue-600"/> : <Square className="w-4 h-4 text-slate-300"/>}</button></td>
+                            <td className="p-4 font-bold text-slate-700 whitespace-nowrap">{inv.number} {inv.type === 'credit_note' && <span className="ml-2 text-[9px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded uppercase">GS</span>}</td>
+                            <td className="p-4 text-sm text-slate-600 whitespace-nowrap">{new Date(inv.date).toLocaleDateString('de-DE')}</td>
+                            <td className="p-4 text-sm font-medium text-slate-800">{getDisplayName(inv.customerSnap)}</td>
+                            <td className="p-4 text-right text-slate-500 text-sm whitespace-nowrap">{inv.totals.netto.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}</td>
+                            <td className={`p-4 text-right font-bold text-sm whitespace-nowrap ${inv.totals.brutto < 0 ? 'text-red-600' : 'text-blue-600'}`}>{inv.totals.brutto.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}</td>
                             <td className="p-4 text-right flex justify-end gap-2">
-                                {inv.number && inv.number.match(/-\d{2}$/) && (
-                                    <button 
-                                      onClick={() => handleNextPartial(inv)} 
-                                      title="Nächste Abschlagsrechnung" 
-                                      className="text-green-600 hover:bg-green-50 p-2 rounded"
-                                    >
-                                      <ArrowUpRight className="w-4 h-4"/>
-                                    </button>
-                                )}
+                                {inv.number && inv.number.match(/-\d{2}$/) && (<button onClick={() => handleNextPartial(inv)} title="Nächste Abschlagsrechnung" className="text-green-600 hover:bg-green-50 p-2 rounded"><ArrowUpRight className="w-4 h-4"/></button>)}
                                 <button onClick={() => setViewInvoice(inv)} title="Ansehen" className="text-blue-500 hover:bg-blue-50 p-2 rounded"><Eye className="w-4 h-4"/></button>
                                 <button onClick={() => handleStorno(inv)} title="Stornieren" className="text-orange-400 hover:bg-orange-50 p-2 rounded"><Ban className="w-4 h-4"/></button>
                                 <button onClick={() => handleDelete('invoices', inv.id)} className="text-red-400 hover:bg-red-50 p-2 rounded"><Trash2 className="w-4 h-4"/></button>
                             </td>
                         </tr>
                     ))}
-                    {processedInvoices.length === 0 && (
-                        <tr><td colSpan="9" className="p-8 text-center text-slate-400 italic">Keine Rechnungen für diese Filter gefunden.</td></tr>
-                    )}
+                    {processedInvoices.length === 0 && (<tr><td colSpan="9" className="p-8 text-center text-slate-400 italic">Keine Rechnungen für diese Filter gefunden.</td></tr>)}
                 </tbody>
              </table>
           </div>
         )}
 
-        {/* --- EXPENSE EDITOR (INCOMING) --- */}
+        {/* EXPENSE EDITOR */}
         {activeTab === 'expense-editor' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pb-20">
              <div className="space-y-6">
@@ -2746,93 +1984,47 @@ function ErpSystem() {
                    <button onClick={saveExpense} disabled={loading} className="w-full bg-orange-600 text-white py-3 rounded-lg font-bold shadow-md hover:bg-orange-700 transition flex items-center justify-center gap-2"><Save className="w-5 h-5"/> Ausgabe buchen</button>
                 </div>
              </div>
-             {/* Expense Preview List - just recent ones */}
-             <div className="bg-white rounded-xl shadow-sm border p-6">
-                <h3 className="font-bold text-slate-500 mb-4">Letzte Ausgaben</h3>
-                {expenses.slice(0, 5).map(ex => (
-                   <div key={ex.id} className="flex justify-between items-center py-3 border-b last:border-0">
-                      <div><p className="font-bold text-sm">{ex.vendorSnap?.company || 'Unbekannt'}</p><p className="text-xs text-slate-400">{ex.description}</p></div>
-                      <div className="text-right"><p className="font-bold text-red-600">-{ex.totals.brutto.toLocaleString('de-DE', {style:'currency', currency:'EUR'})}</p><p className="text-xs text-slate-400">{ex.date}</p></div>
-                   </div>
-                ))}
-             </div>
+             <div className="bg-white rounded-xl shadow-sm border p-6"><h3 className="font-bold text-slate-500 mb-4">Letzte Ausgaben</h3>{expenses.slice(0, 5).map(ex => (<div key={ex.id} className="flex justify-between items-center py-3 border-b last:border-0"><div><p className="font-bold text-sm">{ex.vendorSnap?.company || 'Unbekannt'}</p><p className="text-xs text-slate-400">{ex.description}</p></div><div className="text-right"><p className="font-bold text-red-600">-{ex.totals.brutto.toLocaleString('de-DE', {style:'currency', currency:'EUR'})}</p><p className="text-xs text-slate-400">{ex.date}</p></div></div>))}</div>
           </div>
         )}
 
-        {/* --- EXPENSE HISTORY (INCOMING) --- */}
+        {/* EXPENSE HISTORY */}
         {activeTab === 'expense-history' && (
           <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-             <div className="p-6 border-b bg-slate-50 flex justify-between items-center">
-                <div><h2 className="text-xl font-bold">Einkaufsarchiv</h2><div className="text-xs text-slate-500">Archiv Ihrer Ausgaben</div></div>
-             </div>
+             <div className="p-6 border-b bg-slate-50 flex justify-between items-center"><div><h2 className="text-xl font-bold">Einkaufsarchiv</h2><div className="text-xs text-slate-500">Archiv Ihrer Ausgaben</div></div></div>
              <table className="w-full text-left">
-                <thead className="bg-slate-50 text-slate-400 text-[10px] uppercase font-bold">
-                    <tr><th className="p-4">Datum</th><th className="p-4">Lieferant</th><th className="p-4">Beschreibung</th><th className="p-4">Netto</th><th className="p-4">Brutto</th><th className="p-4 text-right">Aktion</th></tr>
-                </thead>
-                <tbody className="divide-y">
-                    {expenses.sort((a,b) => new Date(b.date) - new Date(a.date)).map(ex => (
-                        <tr key={ex.id} className="hover:bg-slate-50">
-                            <td className="p-4 text-slate-500 text-sm">{ex.date}</td>
-                            <td className="p-4 font-bold">{getDisplayName(ex.vendorSnap)}<div className="text-[10px] text-slate-400 font-normal">{ex.number}</div></td>
-                            <td className="p-4 text-sm">{ex.description}<div className="text-[10px] bg-slate-100 inline-block px-1 rounded text-slate-500">{ex.category}</div></td>
-                            <td className="p-4 text-slate-500">{ex.totals.netto.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}</td>
-                            <td className="p-4 font-bold text-red-600">-{ex.totals.brutto.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}</td>
-                            <td className="p-4 text-right">
-                                <button onClick={() => handleDelete('expenses', ex.id)} className="text-red-400 hover:bg-red-50 p-2 rounded"><Trash2 className="w-4 h-4"/></button>
-                            </td>
-                        </tr>
-                    ))}
-                </tbody>
+                <thead className="bg-slate-50 text-slate-400 text-[10px] uppercase font-bold"><tr><th className="p-4">Datum</th><th className="p-4">Lieferant</th><th className="p-4">Beschreibung</th><th className="p-4">Netto</th><th className="p-4">Brutto</th><th className="p-4 text-right">Aktion</th></tr></thead>
+                <tbody className="divide-y">{expenses.sort((a,b) => new Date(b.date) - new Date(a.date)).map(ex => (<tr key={ex.id} className="hover:bg-slate-50"><td className="p-4 text-slate-500 text-sm">{ex.date}</td><td className="p-4 font-bold">{getDisplayName(ex.vendorSnap)}<div className="text-[10px] text-slate-400 font-normal">{ex.number}</div></td><td className="p-4 text-sm">{ex.description}<div className="text-[10px] bg-slate-100 inline-block px-1 rounded text-slate-500">{ex.category}</div></td><td className="p-4 text-slate-500">{ex.totals.netto.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}</td><td className="p-4 font-bold text-red-600">-{ex.totals.brutto.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}</td><td className="p-4 text-right"><button onClick={() => handleDelete('expenses', ex.id)} className="text-red-400 hover:bg-red-50 p-2 rounded"><Trash2 className="w-4 h-4"/></button></td></tr>))}</tbody>
              </table>
           </div>
         )}
 
       </main>
-      {/* ================================================================================== */}
-      {/* VERSTECKTER BEREICH FÜR PDF-GENERIERUNG (KORRIGIERT & DATEN-ANGEREICHERT)          */}
-      {/* 1. Position fixed & left -5000px sorgt dafür, dass es unsichtbar aber renderbar ist */}
-      {/* 2. Wir reichern 'currentInvoice' mit customerSnap und totals an, damit PDF voll ist */}
-      {/* ================================================================================== */}
+
+      {/* HIDDEN PDF CONTAINER */}
       <div style={{ position: 'fixed', top: 0, left: '-5000px', width: '210mm' }}>
         {(() => {
-            // Logik: Wenn wir eine Archiv-Rechnung ansehen (viewInvoice), nehmen wir die.
-            // Wenn nicht, bauen wir uns die aktuellen Editor-Daten zusammen.
             let pdfData = viewInvoice;
-            
             if (!pdfData) {
-                // Editor-Modus: Wir müssen die Daten "live" zusammenbauen
                 const prefix = profile?.invoicePrefix || 'RE';
                 const nextNum = String(profile?.nextInvoiceNumber || '1000').padStart(4, '0');
                 let tempNumber = currentInvoice.number;
-                
-                // Falls noch keine Nummer fixiert ist, generieren wir die Vorschau-Nummer
                 if (!tempNumber) {
                      tempNumber = currentInvoice.isPartial 
                         ? `${prefix}-${nextNum}-01`
                         : `${prefix}-${nextNum}`;
                 }
-
                 pdfData = {
                     ...currentInvoice,
-                    // WICHTIG: Hier holen wir die echten Kundendaten aus der ID
                     customerSnap: customers.find(c => c.id === currentInvoice.customerId),
-                    // WICHTIG: Hier übergeben wir die berechneten Summen (totals ist global im State)
                     totals: totals,
-                    // Die Nummer setzen
                     number: tempNumber
                 };
             }
-
-            return (
-                <InvoicePaper 
-                    data={pdfData} 
-                    idPrefix="invoice-preview-hidden" 
-                />
-            );
+            return (<InvoicePaper data={pdfData} idPrefix="invoice-preview-hidden" />);
         })()}
       </div>
 
-      {/* Ende des Main Containers */}
     </div>
   );
 }
