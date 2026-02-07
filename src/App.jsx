@@ -164,7 +164,10 @@ function ErpSystem() {
       orderNumber: '',            // <--- NEU HINZUFÜGEN
       // NEU: Default auf HEUTE setzen
       date: new Date().toISOString().split('T')[0], 
-      dateDelivery: new Date().toISOString().split('T')[0],
+      serviceDateMode: 'point', // Standard: Einzeldatum
+      serviceDate: new Date().toISOString().split('T')[0], // Standard: Heute
+      serviceDateStart: '',
+      serviceDateEnd: '',
       
       customerId: '', 
       items: [], 
@@ -397,11 +400,20 @@ function ErpSystem() {
     link.click();
   };
 
-  // --- CSV EXPORT FUNKTION (FINAL: MIT TEILBETRÄGEN) ---
+  // --- CSV EXPORT FUNKTION (FIX: NUR AUSGEWÄHLTE) ---
   const downloadInvoicesCSV = () => {
-    if (processedInvoices.length === 0) return;
+    // 1. Welche Rechnungen sollen exportiert werden?
+    // Wenn Auswahl vorhanden ist, filtern wir. Sonst nehmen wir alle (Fallback).
+    const invoicesToExport = selectedInvoices.length > 0 
+        ? processedInvoices.filter(inv => selectedInvoices.includes(inv.id))
+        : processedInvoices;
 
-    // 1. CSV Header
+    if (invoicesToExport.length === 0) {
+        alert("Keine Rechnungen zum Exportieren vorhanden.");
+        return;
+    }
+
+    // 2. CSV Header
     const headers = [
       "Rechnungsdatum",
       "Rechnungsnummer",
@@ -418,8 +430,8 @@ function ErpSystem() {
       "Status"
     ];
 
-    // 2. Daten aufbereiten
-    const csvRows = processedInvoices.map(inv => {
+    // 3. Daten aufbereiten (Wir iterieren jetzt über invoicesToExport!)
+    const csvRows = invoicesToExport.map(inv => {
       const c = inv.customerSnap || {};
       const t = inv.totals || { netto: 0, taxTotal: 0, brutto: 0 };
       
@@ -433,12 +445,11 @@ function ErpSystem() {
         return num.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       };
 
-      // --- NEU: TEILBETRÄGE BERECHNEN ---
+      // --- TEILBETRÄGE BERECHNEN ---
       let exportNetto = t.netto;
       let exportTax = t.taxTotal;
       let exportBrutto = t.brutto;
 
-      // Wenn Teilrechnung (und Prozentwert vorhanden), rechnen wir den Anteil aus
       if (inv.isPartial && inv.partialPercentage) {
           const factor = inv.partialPercentage / 100;
           exportNetto = exportNetto * factor;
@@ -483,7 +494,7 @@ function ErpSystem() {
         inv.number,
         dateStart,
         dateEnd,
-        formatNumber(exportNetto),   // Hier nutzen wir jetzt die berechneten Teilbeträge!
+        formatNumber(exportNetto),
         formatNumber(exportTax),
         formatNumber(exportBrutto),
         c.number || c.customerNumber || c.company || c.lastName || 'Keine Kundennummer',
@@ -495,13 +506,17 @@ function ErpSystem() {
       ].map(field => `"${field}"`).join(';');
     });
 
-    // 3. Datei generieren
+    // 4. Datei generieren
     const csvContent = "\uFEFF" + [headers.join(';'), ...csvRows].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `Buchungsexport_${new Date().toISOString().slice(0,10)}.csv`);
+    
+    // Dateiname anpassen (z.B. "Export_3_Rechnungen...")
+    const count = invoicesToExport.length;
+    link.setAttribute('download', `Buchungsexport_${count}_Rechnungen_${new Date().toISOString().slice(0,10)}.csv`);
+    
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -930,72 +945,81 @@ function ErpSystem() {
     return data;
   }, [invoices, searchTerm, filterCustomer, filterDateStart, filterDateEnd, sortConfig]);
 
+  // --- RECHNUNG SPEICHERN & WEITERMACHEN (KORRIGIERT) ---
   const saveInvoice = async () => {
-    // PFLICHTFELD CHECK ---
-    if (!user || !currentInvoice.customerId) { alert("Bitte Kunde auswählen!"); return; }
-    if (!user || !currentInvoice.customerId) { alert("Bitte Kunde auswählen!"); return; }
-    if (profile?.showOrderNumber && profile?.requireOrderNumber && !currentInvoice.orderNumber.trim()) {
-        alert("Die Bestellnummer ist ein Pflichtfeld! Bitte geben Sie eine Nummer ein.");
-        setLoading(false); // Wichtig: Loading wieder ausmachen
+    // 1. Validierung: Wir nutzen activeCompanyId aus dem useAuth Hook
+    if (!activeCompanyId) {
+        alert("Fehler: Keine aktive Firma gefunden.");
         return;
     }
-    
-    setLoading(true);
-    
-    let finalInvoiceNumber = '';
-    let shouldIncrementCounter = false;
 
-    // --- ENTSCHEIDUNG: WELCHE NUMMER? ---
-    
-    if (currentInvoice.number) {
-        // FALL 1: Nummer existiert schon (wurde durch "Nächste Teilzahlung" gesetzt)
-        // Wir übernehmen sie einfach. KEIN Hochzählen des globalen Zählers.
-        finalInvoiceNumber = currentInvoice.number;
-    } else {
-        // FALL 2: Neue Rechnung (Standard oder Start einer Teilzahlungs-Kette)
-        // Wir bauen die Nummer frisch aus dem Profil-Zähler.
-        const prefix = profile?.invoicePrefix || 'RE';
-        const nextNum = String(profile?.nextInvoiceNumber || '1000').padStart(4, '0');
-        
-        if (currentInvoice.isPartial) {
-            // Startet Kette: RE-2026-1000-01
-            finalInvoiceNumber = `${prefix}-${nextNum}-01`;
-        } else {
-            // Standard: RE-2026-1000
-            finalInvoiceNumber = `${prefix}-${nextNum}`;
-        }
-        
-        // In beiden Fällen (Standard oder Start-Abschlag) verbrauchen wir eine "Hauptnummer"
-        shouldIncrementCounter = true;
+    if (!currentInvoice.customerId) {
+        alert("Bitte wähle einen Kunden aus.");
+        return;
     }
 
-    const fullInvoice = {
-      ...currentInvoice,
-      number: finalInvoiceNumber,
-      totals,
-      customerSnap: customers.find(c => c.id === currentInvoice.customerId),
-      supplierSnap: getSenderData(currentInvoice),
-      createdAt: new Date().toISOString()
-    };
+    setLoading(true); // Ladeindikator an
 
     try {
-        await handleSaveData('invoices', fullInvoice);
+        const companyId = activeCompanyId;
 
-        // Nur hochzählen, wenn wir eine NEUE Hauptnummer verbraucht haben
-        if (shouldIncrementCounter && activeCompanyId) {
-            const currentNum = parseInt(profile?.nextInvoiceNumber || '1000', 10);
-            const newProfileData = { ...profile, nextInvoiceNumber: currentNum + 1 };
-            setProfile(newProfileData);
-            await setDoc(doc(db, 'companies', activeCompanyId, 'settings', 'profile'), { nextInvoiceNumber: currentNum + 1 }, { merge: true });
-        }
+        // 2. Nummer generieren
+        const prefix = profile?.invoicePrefix || 'RE';
+        const currentNumCounter = parseInt(profile?.nextInvoiceNumber || '1000');
+        const nextNumCounter = currentNumCounter + 1; 
 
-        setLoading(false);
-        setCurrentInvoice(getEmptyInvoice()); 
-        setActiveTab('invoice-history');
+        // Die Nummer für DIESE Rechnung
+        const finalNumber = currentInvoice.number || (
+            prefix + '-' + String(currentNumCounter).padStart(4, '0')
+        );
 
-    } catch (e) {
-        console.error("Fehler beim Speichern:", e);
-        alert("Fehler: " + e.message);
+        // 3. Datenpaket schnüren
+        const invoiceData = {
+            ...currentInvoice,
+            number: finalNumber,
+            // ID generieren
+            id: currentInvoice.id || (finalNumber + (currentInvoice.isPartial ? '-part' : '')), 
+            createdAt: new Date().toISOString(),
+            status: 'open', 
+            totals: totals, 
+            serviceDate: currentInvoice.serviceDate || currentInvoice.date,
+            
+            customerSnap: customers.find(c => c.id === currentInvoice.customerId),
+            companyId: companyId 
+        };
+
+        // 4. SPEICHERN: In die UNTER-SAMMLUNG der Firma schreiben!
+        // Pfad: companies -> [ID] -> invoices -> [RechnungsID]
+        const invoiceRef = doc(db, 'companies', companyId, 'invoices', invoiceData.id);
+        await setDoc(invoiceRef, invoiceData);
+
+        // 5. ZÄHLER UPDATEN: IM FIRMENPROFIL (Nicht im User!) [WICHTIGE ÄNDERUNG]
+        // Wir aktualisieren das Dokument companies/[ID]/settings/profile
+        const settingsRef = doc(db, 'companies', companyId, 'settings', 'profile');
+        
+        await updateDoc(settingsRef, {
+            nextInvoiceNumber: nextNumCounter
+        });
+        
+        // Lokales State Update, damit die UI sofort springt
+        setProfile(prev => ({ ...prev, nextInvoiceNumber: nextNumCounter }));
+        
+        // 6. UI Feedback
+        alert(`Rechnung ${finalNumber} gebucht!`);
+
+        // 7. RESET (Im Editor bleiben, Nummer leeren für die nächste)
+        setCurrentInvoice(prev => ({
+            ...prev,
+            id: null, 
+            number: '', 
+            date: new Date().toISOString().slice(0, 10),
+            // Kunde & Artikel bleiben erhalten für Massenerfassung
+        }));
+        
+    } catch (error) {
+        console.error("Fehler beim Speichern:", error);
+        alert("Speicherfehler: " + error.message);
+    } finally {
         setLoading(false);
     }
   };
@@ -1181,7 +1205,7 @@ function ErpSystem() {
 
                   {/* Kundenadresse */}
                   {/* ANPASSUNG 1: 'mt-10' hinzugefügt für ca. 3 Zeilen Abstand */}
-                  <div className="text-sm font-bold leading-relaxed text-slate-800 h-48 mt-14">
+                  <div className="text-sm font-bold leading-relaxed text-slate-800 h-42 mt-14">
                       {/* Logik: Wenn 'manualName' existiert, nutze das. Sonst Datenbank-Daten. */}
                   
                       {/* Zeile 1: Firma / Name */}
@@ -1279,26 +1303,33 @@ function ErpSystem() {
               </div>
           </div>
 
-            {/* --- LEISTUNGSDATUM / ZEITRAUM (Jetzt über der Tabelle) --- */}
-            <div className="mt-8 mb-4 text-sm text-slate-700">
+            {/* --- LEISTUNGSDATUM / ZEITRAUM (KORRIGIERT) --- */}
+            <div className="mt-16 mb-4 text-sm text-slate-700">
                 <span className="font-bold mr-2">
-                    {safeData.isServicePeriod ? 'Leistungszeitraum:' : 'Leistungsdatum:'}
+                    {safeData.serviceDateMode === 'period' ? 'Leistungszeitraum:' : 'Leistungsdatum:'}
                 </span>
                 <span>
-                    {safeData.isServicePeriod && safeData.serviceDateStart ? (
+                    {safeData.serviceDateMode === 'period' ? (
                         <>
-                            {new Date(safeData.serviceDateStart).toLocaleDateString('de-DE', { year: 'numeric', month: '2-digit', day: '2-digit' })}
-                            <span className="mx-2">–</span> {/* Etwas mehr Abstand beim Bindestrich */}
-                            {new Date(safeData.dateDelivery).toLocaleDateString('de-DE', { year: 'numeric', month: '2-digit', day: '2-digit' })}
+                            {/* STARTDATUM */}
+                            {safeData.serviceDateStart ? new Date(safeData.serviceDateStart).toLocaleDateString('de-DE', { year: 'numeric', month: '2-digit', day: '2-digit' }) : '...'}
+                            
+                            <span className="mx-2">–</span> 
+                            
+                            {/* ENDDATUM */}
+                            {safeData.serviceDateEnd ? new Date(safeData.serviceDateEnd).toLocaleDateString('de-DE', { year: 'numeric', month: '2-digit', day: '2-digit' }) : '...'}
                         </>
                     ) : (
-                        new Date(safeData.dateDelivery).toLocaleDateString('de-DE', { year: 'numeric', month: '2-digit', day: '2-digit' })
+                        /* EINZELDATUM (Fallback auf Rechnungsdatum, falls leer) */
+                        safeData.serviceDate 
+                            ? new Date(safeData.serviceDate).toLocaleDateString('de-DE', { year: 'numeric', month: '2-digit', day: '2-digit' })
+                            : new Date(safeData.date).toLocaleDateString('de-DE', { year: 'numeric', month: '2-digit', day: '2-digit' })
                     )}
                 </span>
             </div>
 
             {/* TABELLE (Jetzt direkt unter dem Header, da der Datumsblock weg ist) */}
-            <table className="w-full mb-8 mt-8">
+            <table className="w-full mb-8 mt-4">
                 <thead className="border-b-2 border-slate-900"><tr className="text-left font-bold"><th className="py-2">Pos</th><th className="py-2">Beschreibung</th><th className="py-2 text-right">Anz.</th><th className="py-2 text-right">Einzel</th><th className="py-2 text-right">Gesamt</th></tr></thead>
                 <tbody className="divide-y divide-slate-100">
                     {safeItems.map((line, idx) => (
@@ -2135,51 +2166,58 @@ function ErpSystem() {
                        />
                    </div>
 
-                   {/* --- C: LEISTUNGSDATUM / ZEITRAUM --- */}
-                   <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 mb-4">
-                       <div className="flex items-center justify-between mb-2">
-                         <label className="text-xs font-bold text-slate-500">Leistungszeitpunkt</label>
-                         <div className="flex items-center gap-2">
-                             <input 
-                                 type="checkbox" 
-                                 id="usePeriod"
-                                 checked={currentInvoice.isServicePeriod || false}
-                                 onChange={e => setCurrentInvoice({...currentInvoice, isServicePeriod: e.target.checked})}
-                                 className="rounded border-slate-300"
-                             />
-                             <label htmlFor="usePeriod" className="text-xs text-slate-600 cursor-pointer select-none">
-                                 Zeitraum angeben
-                             </label>
-                         </div>
-                       </div>
-                       
-                       <div className="grid grid-cols-2 gap-4">
-                         {/* Startdatum (nur sichtbar wenn Zeitraum aktiv) */}
-                         {currentInvoice.isServicePeriod && (
-                             <div>
-                                 <label className="text-[10px] text-slate-400 block mb-1">Von (Beginn)</label>
-                                 <input 
-                                     type="date" 
-                                     className="w-full p-2 border rounded bg-white font-medium text-sm"
-                                     value={currentInvoice.serviceDateStart || ''}
-                                     onChange={e => setCurrentInvoice({...currentInvoice, serviceDateStart: e.target.value})}
-                                 />
-                             </div>
-                         )}
-                         
-                         {/* Enddatum (oder einzelnes Leistungsdatum) */}
-                         <div>
-                             <label className="text-[10px] text-slate-400 block mb-1">
-                                 {currentInvoice.isServicePeriod ? 'Bis (Ende)' : 'Leistungsdatum'}
-                             </label>
-                             <input 
-                                 type="date" 
-                                 className="w-full p-2 border rounded bg-white font-medium text-sm"
-                                 value={currentInvoice.dateDelivery} // Wir nutzen dateDelivery als "Ende" oder "Einzeldatum"
-                                 onChange={e => setCurrentInvoice({...currentInvoice, dateDelivery: e.target.value})}
-                             />
-                         </div>
-                       </div>
+                   {/* --- LEISTUNGSDATUM / ZEITRAUM --- */}
+                    <div className="mb-4">
+                        <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Leistungszeitpunkt</label>
+                        
+                        {/* Auswahl: Zeitpunkt vs Zeitraum */}
+                        <div className="flex gap-4 mb-2 text-sm">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                                <input 
+                                    type="radio" 
+                                    name="serviceDateMode"
+                                    checked={currentInvoice.serviceDateMode !== 'period'}
+                                    onChange={() => setCurrentInvoice({...currentInvoice, serviceDateMode: 'point'})}
+                                />
+                                <span>Einmalig (Datum)</span>
+                            </label>
+                            <label className="flex items-center gap-2 cursor-pointer">
+                                <input 
+                                    type="radio" 
+                                    name="serviceDateMode"
+                                    checked={currentInvoice.serviceDateMode === 'period'}
+                                    onChange={() => setCurrentInvoice({...currentInvoice, serviceDateMode: 'period'})}
+                                />
+                                <span>Zeitraum (Von - Bis)</span>
+                            </label>
+                        </div>
+
+                        {/* Eingabefelder */}
+                        {currentInvoice.serviceDateMode === 'period' ? (
+                            <div className="grid grid-cols-2 gap-2">
+                                <input 
+                                    type="date" 
+                                    className="w-full p-2 border rounded text-sm"
+                                    // WICHTIG: Korrekter Variablenname für CSV (serviceDateStart)
+                                    value={currentInvoice.serviceDateStart || ''}
+                                    onChange={e => setCurrentInvoice({...currentInvoice, serviceDateStart: e.target.value})}
+                                />
+                                <input 
+                                    type="date" 
+                                    className="w-full p-2 border rounded text-sm"
+                                    value={currentInvoice.serviceDateEnd || ''}
+                                    onChange={e => setCurrentInvoice({...currentInvoice, serviceDateEnd: e.target.value})}
+                                />
+                            </div>
+                        ) : (
+                            <input 
+                                type="date" 
+                                className="w-full p-2 border rounded text-sm"
+                                // Default: Falls leer, nutze Rechnungsdatum oder Heute
+                                value={currentInvoice.serviceDate || currentInvoice.date || new Date().toISOString().slice(0, 10)}
+                                onChange={e => setCurrentInvoice({...currentInvoice, serviceDate: e.target.value})}
+                            />
+                        )}
                     </div>
 
                     {/* --- A: ZAHLUNGSBEDINGUNGEN --- */}
