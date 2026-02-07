@@ -558,16 +558,32 @@ function ErpSystem() {
     else { alert("Keine passenden Datensätze gefunden."); }
   };
 
-  // --- Logic Helpers (NEU) ---
+  // --- Logic Helpers (MIT KOMMA-FIX) ---
   const handleSaveData = async (colName, data) => {
     if (!activeCompanyId) return;
+    
     try {
+      // 1. Kopie der Daten erstellen, damit wir sie bearbeiten können
+      let cleanData = { ...data };
+
+      // 2. SPEZIAL-LOGIK FÜR ARTIKEL (Preise bereinigen)
+      if (colName === 'items' && cleanData.price !== undefined) {
+          // Egal was kommt, mach einen String draus, ersetze Komma durch Punkt
+          const priceStr = String(cleanData.price).replace(',', '.');
+          // Mach eine echte Zahl daraus für die Datenbank
+          cleanData.price = parseFloat(priceStr);
+          
+          // Falls ungültig (z.B. Text eingegeben), auf 0 setzen oder Fehler werfen
+          if (isNaN(cleanData.price)) cleanData.price = 0;
+      }
+
+      // 3. Speichern wie gewohnt
       if (data.id) {
         // Update existierendes Dokument
-        await updateDoc(getCompanyDoc(colName, data.id), data);
+        await updateDoc(getCompanyDoc(colName, data.id), cleanData);
       } else {
         // Neues Dokument erstellen
-        await addDoc(getCompanyCollection(colName), data);
+        await addDoc(getCompanyCollection(colName), cleanData);
       }
     } catch (e) { 
       console.error("Fehler beim Speichern:", e); 
@@ -1137,12 +1153,26 @@ function ErpSystem() {
                    ) : (
                        // --- FALL B: NORMALES TEXTFELD ---
                        <>
-                           <label className="block text-xs font-semibold text-slate-500 mb-1">{f.label} {f.required && <span className="text-red-500">*</span>}</label>
+                           <label className="block text-xs font-semibold text-slate-500 mb-1">
+                               {f.label} {f.required && <span className="text-red-500">*</span>}
+                           </label>
                            <input 
-                             type={f.type || 'text'}
+                             type={f.type || 'text'} // Bleibt 'text', damit Kommas erlaubt sind
+                             inputMode={f.key === 'price' ? 'decimal' : 'text'} // Handys zeigen Zahlentastatur
                              placeholder={f.placeholder || f.label} 
                              className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-200 outline-none bg-white shadow-sm" 
-                             value={editItem[f.key] || ''} 
+                             
+                             // WICHTIG: Wenn wir ein Item bearbeiten, das schon eine Zahl ist (19.99),
+                             // wandeln wir es für die Anzeige kurz in einen String mit Komma um (19,99).
+                             // So sieht es für den Nutzer deutsch aus.
+                             value={
+                                 editItem[f.key] !== undefined 
+                                   ? (f.key === 'price' 
+                                       ? String(editItem[f.key]).replace('.', ',') 
+                                       : editItem[f.key]) 
+                                   : ''
+                             } 
+                             
                              onChange={e => setEditItem({...editItem, [f.key]: e.target.value})}
                            />
                        </>
@@ -1405,12 +1435,13 @@ function ErpSystem() {
                     {safeData.paymentTerms === 'paid' && "Der Rechnungsbetrag wurde bereits dankend erhalten."}
                     {safeData.paymentTerms === '14_days' && `Zahlbar innerhalb von 14 Tagen ohne Abzug bis zum ${new Date(new Date(safeData.date).getTime() + 14*24*60*60*1000).toLocaleDateString('de-DE')}.`}
                     {safeData.paymentTerms === '7_days' && `Zahlbar innerhalb von 7 Tagen ohne Abzug bis zum ${new Date(new Date(safeData.date).getTime() + 7*24*60*60*1000).toLocaleDateString('de-DE')}.`}
+                    {safeData.paymentTerms === '0_days' && `Zahlbar ab sofort an das folgende Bankkonto`}
                     {safeData.paymentTerms === 'sepa_7' && "Der Rechnungsbetrag wird per Lastschrift eingezogen."}
                 </p>
 
                 {safeData.paymentTerms !== 'paid' && (
                     <div className="mt-4 bg-slate-50 p-4 rounded text-xs flex gap-8">
-                        {(safeData.paymentTerms === '14_days' || safeData.paymentTerms === '7_days') && (
+                        {(safeData.paymentTerms === '14_days' || safeData.paymentTerms === '7_days' || safeData.paymentTerms === '0_days') && (
                             <>
                                 <div><span className="block text-slate-400 uppercase tracking-wider font-bold text-[10px]">Bankverbindung</span><span className="font-bold text-slate-700">{profile?.bankName || 'Bank nicht hinterlegt'}</span></div>
                                 <div><span className="block text-slate-400 uppercase tracking-wider font-bold text-[10px]">IBAN</span><span className="font-mono text-slate-700">{profile?.iban || '-'}</span></div>
@@ -2231,6 +2262,7 @@ function ErpSystem() {
                           <option value="paid">Bereits bezahlt</option>
                           <option value="14_days">Zahlbar innerhalb von 14 Tagen ohne Abzug</option>
                           <option value="7_days">Zahlbar innerhalb von 7 Tagen ohne Abzug</option>
+                          <option value="0_days">Zahlbar sofort ohne Abzug</option>
                           <option value="sepa_7">Abbuchung (Lastschrift) innerhalb von 7 Tagen</option>
                         </select>
                     </div>
